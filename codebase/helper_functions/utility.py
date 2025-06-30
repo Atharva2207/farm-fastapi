@@ -1,18 +1,16 @@
-import datetime
+from datetime import datetime
 from functools import wraps
 import re
 from typing import List
-from fastapi import status, Query
-from fastapi.responses import JSONResponse
-from requests import Session
-from sqlalchemy import func
-from database import SessionLocal
-from models import KVK, Role, User
-from passlib.context import CryptContext
-from re import compile
-from datetime import datetime
 
-timestamp = datetime.utcnow().isoformat()
+from fastapi import status
+from fastapi.responses import JSONResponse
+from sqlalchemy.orm import Session
+from passlib.context import CryptContext
+
+from database import SessionLocal
+from models import Role, User
+
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
@@ -20,7 +18,7 @@ def get_user(db: Session, api: str, roles: list = [], is_active: bool = True):
     if not len(roles):
         roles = [role.id for role in db.query(Role).all()]
 
-    user = db.query(User).filter(User.apikey == api, User.role.in_(roles)).first()
+    user = db.query(User).filter(User.apikey == api, User.role_id.in_(roles)).first()
 
     if not user:
         return JSONResponse(
@@ -30,8 +28,7 @@ def get_user(db: Session, api: str, roles: list = [], is_active: bool = True):
                 "status_code": status.HTTP_404_NOT_FOUND,
                 "error_code": "USER_NOT_FOUND",
                 "data": {},
-                "timestamp": timestamp,
-                # "request_id": log.id,
+                "timestamp": datetime.utcnow().isoformat() + "Z",
             },
         )
 
@@ -41,10 +38,9 @@ def get_user(db: Session, api: str, roles: list = [], is_active: bool = True):
             content={
                 "message": "The account is not active. Please contact administrator",
                 "status_code": status.HTTP_406_NOT_ACCEPTABLE,
-                "error_code": "INACTIVE_USER",  # Fixed: More appropriate error code
+                "error_code": "INACTIVE_USER",
                 "data": {},
-                "timestamp": timestamp,
-                # "request_id": log.id,
+                "timestamp": datetime.utcnow().isoformat() + "Z",
             },
         )
     return user
@@ -68,92 +64,76 @@ def has_permission(permission: List[int] = []):
     return decorator
 
 
-def secure_pwd(raw_password):
-    hashed = pwd_context.hash(raw_password)
-
-    return hashed
+def secure_pwd(raw_password: str) -> str:
+    return pwd_context.hash(raw_password)
 
 
-def verify_pwd(plain, hash):
+def verify_pwd(plain: str, hash: str) -> bool:
     return pwd_context.verify(plain, hash)
 
 
 def validate_password(password: str):
     """
     Validate password against security requirements.
-
-    Args:
-        password (str): Password string to validate.
-
-    Returns:
-        JSONResponse or None: Returns JSONResponse with error details if validation fails,
-        None if validation passes.
+    Returns JSONResponse if invalid, None if valid.
     """
     timestamp = datetime.utcnow().isoformat() + "Z"
 
     if len(password) < 8:
         return JSONResponse(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=400,
             content={
-                "message": "Password must be at least 8 characters long",
                 "status_code": 400,
+                "message": "Password must be at least 8 characters long",
                 "error_code": "PASSWORD_TOO_SHORT",
-                "data": {"minimum_length": 8, "current_length": len(password)},
+                "data": {},
                 "timestamp": timestamp,
             },
         )
-
     if not re.search(r"[a-z]", password):
         return JSONResponse(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=400,
             content={
-                "message": "Password must include at least one lowercase letter",
                 "status_code": 400,
+                "message": "Password must include at least one lowercase letter",
                 "error_code": "PASSWORD_MISSING_LOWERCASE",
                 "data": {},
                 "timestamp": timestamp,
             },
         )
-
     if not re.search(r"[A-Z]", password):
         return JSONResponse(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=400,
             content={
-                "message": "Password must contain at least one uppercase letter",
                 "status_code": 400,
+                "message": "Password must include at least one uppercase letter",
                 "error_code": "PASSWORD_MISSING_UPPERCASE",
                 "data": {},
                 "timestamp": timestamp,
             },
         )
-
     if not re.search(r"\d", password):
         return JSONResponse(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=400,
             content={
-                "message": "Password must contain at least one numeric digit",
                 "status_code": 400,
+                "message": "Password must include at least one digit",
                 "error_code": "PASSWORD_MISSING_DIGIT",
                 "data": {},
                 "timestamp": timestamp,
             },
         )
-
     if not re.search(r"[!@#$%*?&]", password):
         return JSONResponse(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=400,
             content={
-                "message": "Password must contain at least one special character (!, @, #, $, %, *, ?, &)",
                 "status_code": 400,
+                "message": "Password must include one special character (!@#$%*?&)",
                 "error_code": "PASSWORD_MISSING_SPECIAL_CHAR",
-                "data": {
-                    "allowed_special_chars": ["!", "@", "#", "$", "%", "*", "?", "&"]
-                },
+                "data": {},
                 "timestamp": timestamp,
             },
         )
-
-    # If all validations pass, return None (no error)
     return None
 
 
@@ -168,13 +148,11 @@ def get_role_by_name(db: Session, role_name: str):
 
 def get_user_by_username_or_email(db: Session, username: str):
     return db.query(User).filter(
-        (User.username == username) | (User.email == username) | (User.phone_number == username)
+        (User.username == username) |
+        (User.email == username) |
+        (User.phone_number == username)
     ).first()
 
-def get_kvk_by_username_or_email(db: Session, username: str):
-    return db.query(KVK).filter(
-        (KVK.email == username) | (KVK.phone_number == username) | (KVK.kvk_code == username)
-    ).first()
 
 def get_role_by_name(db: Session, role_name: str):
     """Get role by name"""

@@ -1,123 +1,135 @@
-from datetime import datetime
-from re import compile
-from fastapi import APIRouter, Depends, status
+# Refactored authentication router using single User model with JWT
+
+from datetime import datetime, timedelta
+from fastapi import APIRouter, Depends, status, HTTPException
 from fastapi.responses import JSONResponse
+from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
-from sqlalchemy.sql import func
-from helper_functions.utility import get_kvk_by_username_or_email, get_password_hash, get_role_by_name, get_user_by_username_or_email, validate_password, verify_password, verify_pwd
-from models import KVK, Role, User
-from schemas import UserRegistrationSchema, UserResponseSchema, KVKRegistrationSchema, KVKResponseSchema, LoginSchema
+from jose import JWTError, jwt
+from helper_functions.utility import (
+    get_user_by_username_or_email, get_password_hash, validate_password,
+    verify_password, get_role_by_name
+)
+from models import Role, User
+from schemas import UserRegistrationSchema, UserResponseSchema, LoginSchema
 from database import get_db
-from datetime import datetime
+import uuid
+
+SECRET_KEY = "your_secret_key_here"
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 30
+REFRESH_TOKEN_EXPIRE_DAYS = 7
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
 
 route = APIRouter(prefix="/auth", tags=["Authentication"])
 
-@route.post("/register/user", response_model=UserResponseSchema)
+def create_access_token(data: dict, expires_delta: timedelta = None):
+    to_encode = data.copy()
+    expire = datetime.utcnow() + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
+    to_encode.update({"exp": expire})
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+
+def create_refresh_token(data: dict):
+    expire = datetime.utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+    to_encode = data.copy()
+    to_encode.update({"exp": expire, "type": "refresh"})
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+
+@route.post("/register")
 def register_user(payload: UserRegistrationSchema, db: Session = Depends(get_db)):
-    """Register a new farmer or super admin user"""
-    
-    # Check if user already exists
     existing_user = db.query(User).filter(
-        (User.username == payload.username) | 
-        (User.email == payload.email) |
-        (User.phone_number == payload.phone_number)
+        (User.username == payload.username) | (User.email == payload.email)
     ).first()
-    
     if existing_user:
-        if existing_user.is_deleted:
-            error_msg = "Account cannot be created with these credentials."
-            error_code = "DELETED_USER"
-        else:
-            error_msg = "User already exists with this username, email, or phone number"
-            error_code = "USER_EXISTS"
-            
         return JSONResponse(
-            status_code=403,
+            status_code=400,
             content={
-                "status_code": 403,
-                "message": error_msg,
-                "error_code": error_code,
+                "status_code": 400,
+                "message": "User already exists.",
+                "error_code": "USER_EXISTS",
                 "data": {},
                 "timestamp": datetime.utcnow().isoformat() + "Z",
             },
         )
-    
+
     # Validate password
-    password_validation = validate_password(payload.password)
-    if password_validation:
-        return password_validation
-    
-    # Get role or create if doesn't exist
+    pwd_validation = validate_password(payload.password)
+    if pwd_validation:
+        return pwd_validation  # already returns JSONResponse
+
+    # Fetch or create role
     role = get_role_by_name(db, payload.role_name)
     if not role:
-        # Auto-create role if it's a valid role name
-        valid_roles = ["farmer", "super_admin"]
-        if payload.role_name in valid_roles:
-            role_descriptions = {
-                "farmer": "Farmer user with basic access to farm management",
-                "super_admin": "Super administrator with full system access"
-            }
-            
-            role = Role(
-                name=payload.role_name,
-                description=role_descriptions[payload.role_name]
-            )
-            db.add(role)
-            db.commit()
-            db.refresh(role)
-        else:
+        role = Role(name=payload.role_name, description=f"Auto-created role")
+        db.add(role)
+        db.commit()
+        db.refresh(role)
+
+    # If farmer, validate and attach kvk_id
+    kvk_user_id = None
+    if payload.role_name == "farmer":
+        if not payload.kvk_id:
             return JSONResponse(
                 status_code=400,
                 content={
                     "status_code": 400,
-                    "message": f"Invalid role: {payload.role_name}. Valid roles are: {', '.join(valid_roles)}",
-                    "error_code": "INVALID_ROLE",
+                    "message": "Farmer must be linked to a KVK",
+                    "error_code": "KVK_REQUIRED",
                     "data": {},
                     "timestamp": datetime.utcnow().isoformat() + "Z",
                 },
             )
-    
-    # Create user
-    try:
-        hashed_password = get_password_hash(payload.password)
-        user = User(
-            username=payload.username,
-            email=payload.email,
-            name=payload.name,
-            phone_number=payload.phone_number,
-            password_hash=hashed_password,
-            role_id=role.id
-        )
-        
-        db.add(user)
-        db.commit()
-        db.refresh(user)
-        
-    except Exception as e:
-        db.rollback()
-        return JSONResponse(
-            status_code=500,
-            content={
-                "status_code": 500,
-                "message": "Failed to create user. Please try again.",
-                "error_code": "USER_CREATION_FAILED",
-                "data": {},
-                "timestamp": datetime.utcnow().isoformat() + "Z",
-            },
-        )
-    
-    # Prepare response data with proper datetime serialization
+        kvk_user = db.query(User).filter(User.id == payload.kvk_id, User.role.has(name="kvk")).first()
+        if not kvk_user:
+            return JSONResponse(
+                status_code=404,
+                content={
+                    "status_code": 404,
+                    "message": "KVK with given ID not found",
+                    "error_code": "KVK_NOT_FOUND",
+                    "data": {},
+                    "timestamp": datetime.utcnow().isoformat() + "Z",
+                },
+            )
+        kvk_user_id = kvk_user.id
+
+    # Hash the password
+    hashed_password = get_password_hash(payload.password)
+
+    # Create the user
+    user = User(
+        username=payload.username,
+        email=payload.email,
+        name=payload.name,
+        phone_number=payload.phone_number,
+        password_hash=hashed_password,
+        role_id=role.id,
+        kvk_id=kvk_user_id if payload.role_name == "farmer" else None,
+        district=payload.district if payload.role_name == "kvk" else None,
+        state=payload.state if payload.role_name == "kvk" else None,
+        address=payload.address if payload.role_name == "kvk" else None,
+        pincode=payload.pincode if payload.role_name == "kvk" else None,
+        director_name=payload.director_name if payload.role_name == "kvk" else None,
+        established_year=payload.established_year if payload.role_name == "kvk" else None,
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+    # Response
     response_data = {
         "id": str(user.id),
         "username": user.username,
         "email": user.email,
         "name": user.name,
         "phone_number": user.phone_number,
-        "role_name": role.name,
+        "role": payload.role_name,
         "is_active": user.is_active,
-        "date_joined": user.date_joined.isoformat() + "Z" if user.date_joined else None,
+        "date_joined": user.date_joined.isoformat() + "Z",
+        "kvk_id": str(user.kvk_id) if user.kvk_id else None,
     }
-    
+
     return JSONResponse(
         status_code=201,
         content={
@@ -130,292 +142,112 @@ def register_user(payload: UserRegistrationSchema, db: Session = Depends(get_db)
     )
 
 
-@route.post("/register/kvk", response_model=KVKResponseSchema)
-def register_kvk(payload: KVKRegistrationSchema, db: Session = Depends(get_db)):
-    """Register a new KVK (Krishi Vigyan Kendra)"""
-    
-    # Check if KVK already exists
-    existing_kvk = db.query(KVK).filter(
-        (KVK.email == payload.email) |
-        (KVK.phone_number == payload.phone_number) |
-        (KVK.kvk_code == payload.kvk_code)
-    ).first()
-    
-    if existing_kvk:
-        if existing_kvk.is_deleted:
-            error_msg = "KVK cannot be registered with these credentials."
-            error_code = "DELETED_KVK"
-        else:
-            error_msg = "KVK already exists with this email, phone number, or KVK code"
-            error_code = "KVK_EXISTS"
-            
-        return JSONResponse(
-            status_code=status.HTTP_403_FORBIDDEN,
-            content={
-                "status_code": status.HTTP_403_FORBIDDEN,
-                "message": error_msg,
-                "error_code": error_code,
-                "data": {},
-                "timestamp": datetime.utcnow().isoformat() + "Z",
-            },
-        )
-    
-    # Validate password
-    password_validation = validate_password(payload.password)
-    if password_validation:
-        return password_validation
-    
-    # Create KVK
-    hashed_password = get_password_hash(payload.password)
-    kvk = KVK(
-        kvk_name=payload.kvk_name,
-        kvk_code=payload.kvk_code,
-        email=payload.email,
-        phone_number=payload.phone_number,
-        password_hash=hashed_password,
-        district=payload.district,
-        state=payload.state,
-        address=payload.address,
-        pincode=payload.pincode,
-        director_name=payload.director_name,
-        established_year=payload.established_year
-    )
-    
-    db.add(kvk)
-    db.commit()
-    db.refresh(kvk)
-    
-    response_data = {
-        "id": str(kvk.id),
-        "kvk_name": kvk.kvk_name,
-        "kvk_code": kvk.kvk_code,
-        "email": kvk.email,
-        "phone_number": kvk.phone_number,
-        "district": kvk.district,
-        "state": kvk.state,
-        "is_active": kvk.is_active,
-        "is_verified": kvk.is_verified,
-        "date_joined": kvk.date_joined.isoformat() + "Z",
-    }
-    
-    return JSONResponse(
-        status_code=status.HTTP_201_CREATED,
-        content={
-            "status_code": status.HTTP_201_CREATED,
-            "message": "KVK registered successfully. Awaiting admin verification.",
-            "error_code": None,
-            "data": response_data,
-            "timestamp": datetime.utcnow().isoformat() + "Z",
-        },
-    )
-
-
 @route.post("/login")
 def login(payload: LoginSchema, db: Session = Depends(get_db)):
-    """Login for both Users and KVKs"""
-    
-    if payload.user_type == "user":
-        # Login for User (Farmer/Super Admin)
-        user = get_user_by_username_or_email(db, payload.username)
-        
-        if not user:
-            return JSONResponse(
-                status_code=status.HTTP_403_FORBIDDEN,
-                content={
-                    "status_code": status.HTTP_403_FORBIDDEN,
-                    "message": "User does not exist",
-                    "error_code": "USER_NOT_FOUND",
-                    "data": {},
-                    "timestamp": datetime.utcnow().isoformat() + "Z",
-                },
-            )
-        
-        # Check various user statuses
-        if user.is_deleted:
-            return JSONResponse(
-                status_code=status.HTTP_403_FORBIDDEN,
-                content={
-                    "status_code": status.HTTP_403_FORBIDDEN,
-                    "message": "This user is marked for deletion",
-                    "error_code": "DELETED_USER",
-                    "data": {},
-                    "timestamp": datetime.utcnow().isoformat() + "Z",
-                },
-            )
-        
-        if not user.is_active:
-            return JSONResponse(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                content={
-                    "status_code": status.HTTP_401_UNAUTHORIZED,
-                    "message": "User is not active. Please activate your account first",
-                    "error_code": "INACTIVE_USER",
-                    "data": {},
-                    "timestamp": datetime.utcnow().isoformat() + "Z",
-                },
-            )
-        
-        if user.is_blocked:
-            if user.blocked_until and user.blocked_until > datetime.utcnow():
-                return JSONResponse(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    content={
-                        "status_code": status.HTTP_403_FORBIDDEN,
-                        "message": "Account is temporarily blocked. Please try again later.",
-                        "error_code": "BLOCKED_USER",
-                        "data": {},
-                        "timestamp": datetime.utcnow().isoformat() + "Z",
-                    },
-                )
-            else:
-                # Unblock user if block period has expired
-                user.is_blocked = False
-                user.blocked_until = None
-                db.commit()
-        
-        # Verify password
-        if not verify_password(payload.password, user.password_hash):
-            return JSONResponse(
-                status_code=status.HTTP_403_FORBIDDEN,
-                content={
-                    "status_code": status.HTTP_403_FORBIDDEN,
-                    "message": "Incorrect password",
-                    "error_code": "INVALID_PASSWORD",
-                    "data": {},
-                    "timestamp": datetime.utcnow().isoformat() + "Z",
-                },
-            )
-        
-        # Get role information
-        role = db.query(Role).filter(Role.id == user.role_id).first()
-        
-        response_data = {
-            "id": str(user.id),
-            "username": user.username,
-            "email": user.email,
-            "name": user.name,
-            "phone_number": user.phone_number,
-            "role": role.name if role else None,
-            "is_active": user.is_active,
-            "user_type": "user"
-        }
-    
-    elif payload.user_type == "kvk":
-        # Login for KVK
-        kvk = get_kvk_by_username_or_email(db, payload.username)
-        
-        if not kvk:
-            return JSONResponse(
-                status_code=status.HTTP_403_FORBIDDEN,
-                content={
-                    "status_code": status.HTTP_403_FORBIDDEN,
-                    "message": "KVK does not exist",
-                    "error_code": "KVK_NOT_FOUND",
-                    "data": {},
-                    "timestamp": datetime.utcnow().isoformat() + "Z",
-                },
-            )
-        
-        # Check various KVK statuses
-        if kvk.is_deleted:
-            return JSONResponse(
-                status_code=status.HTTP_403_FORBIDDEN,
-                content={
-                    "status_code": status.HTTP_403_FORBIDDEN,
-                    "message": "This KVK is marked for deletion",
-                    "error_code": "DELETED_KVK",
-                    "data": {},
-                    "timestamp": datetime.utcnow().isoformat() + "Z",
-                },
-            )
-        
-        if not kvk.is_active:
-            return JSONResponse(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                content={
-                    "status_code": status.HTTP_401_UNAUTHORIZED,
-                    "message": "KVK is not active",
-                    "error_code": "INACTIVE_KVK",
-                    "data": {},
-                    "timestamp": datetime.utcnow().isoformat() + "Z",
-                },
-            )
-        
-        if not kvk.is_verified:
-            return JSONResponse(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                content={
-                    "status_code": status.HTTP_401_UNAUTHORIZED,
-                    "message": "KVK is not verified by admin yet",
-                    "error_code": "UNVERIFIED_KVK",
-                    "data": {},
-                    "timestamp": datetime.utcnow().isoformat() + "Z",
-                },
-            )
-        
-        if kvk.is_blocked:
-            if kvk.blocked_until and kvk.blocked_until > datetime.utcnow():
-                return JSONResponse(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    content={
-                        "status_code": status.HTTP_403_FORBIDDEN,
-                        "message": "KVK is temporarily blocked. Please try again later.",
-                        "error_code": "BLOCKED_KVK",
-                        "data": {},
-                        "timestamp": datetime.utcnow().isoformat() + "Z",
-                    },
-                )
-            else:
-                # Unblock KVK if block period has expired
-                kvk.is_blocked = False
-                kvk.blocked_until = None
-                db.commit()
-        
-        # Verify password
-        if not verify_password(payload.password, kvk.password_hash):
-            return JSONResponse(
-                status_code=status.HTTP_403_FORBIDDEN,
-                content={
-                    "status_code": status.HTTP_403_FORBIDDEN,
-                    "message": "Incorrect password",
-                    "error_code": "INVALID_PASSWORD",
-                    "data": {},
-                    "timestamp": datetime.utcnow().isoformat() + "Z",
-                },
-            )
-        
-        response_data = {
-            "id": str(kvk.id),
-            "kvk_name": kvk.kvk_name,
-            "kvk_code": kvk.kvk_code,
-            "email": kvk.email,
-            "phone_number": kvk.phone_number,
-            "district": kvk.district,
-            "state": kvk.state,
-            "is_active": kvk.is_active,
-            "is_verified": kvk.is_verified,
-            "user_type": "kvk"
-        }
-    
-    else:
+    user = get_user_by_username_or_email(db, payload.username)
+    if not user or not verify_password(payload.password, user.password_hash):
         return JSONResponse(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=403,
             content={
-                "status_code": status.HTTP_400_BAD_REQUEST,
-                "message": "Invalid user type",
-                "error_code": "INVALID_USER_TYPE",
+                "status_code": 403,
+                "message": "Invalid credentials",
+                "error_code": "INVALID_CREDENTIALS",
                 "data": {},
                 "timestamp": datetime.utcnow().isoformat() + "Z",
             },
         )
-    
+
+    if user.is_blocked and user.blocked_until and user.blocked_until > datetime.utcnow():
+        return JSONResponse(
+            status_code=403,
+            content={
+                "status_code": 403,
+                "message": "User is blocked",
+                "error_code": "BLOCKED_USER",
+                "data": {},
+                "timestamp": datetime.utcnow().isoformat() + "Z",
+            },
+        )
+
+    access_token = create_access_token({"sub": str(user.id)})
+    refresh_token = create_refresh_token({"sub": str(user.id)})
+
+    response_data = {
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "token_type": "bearer"
+    }
+
     return JSONResponse(
-        status_code=status.HTTP_200_OK,
+        status_code=200,
         content={
-            "status_code": status.HTTP_200_OK,
+            "status_code": 200,
             "message": "Login successful",
             "error_code": None,
             "data": response_data,
             "timestamp": datetime.utcnow().isoformat() + "Z",
         },
     )
+
+@route.post("/token/refresh")
+def refresh_token(refresh_token: str):
+    try:
+        payload = jwt.decode(refresh_token, SECRET_KEY, algorithms=[ALGORITHM])
+        if payload.get("type") != "refresh":
+            raise JWTError("Invalid refresh token")
+        user_id = payload.get("sub")
+    except JWTError:
+        return JSONResponse(
+            status_code=401,
+            content={
+                "status_code": 401,
+                "message": "Invalid refresh token",
+                "error_code": "INVALID_REFRESH_TOKEN",
+                "data": {},
+                "timestamp": datetime.utcnow().isoformat() + "Z",
+            },
+        )
+
+    access_token = create_access_token({"sub": user_id})
+    new_refresh_token = create_refresh_token({"sub": user_id})
+
+    return JSONResponse(
+        status_code=200,
+        content={
+            "status_code": 200,
+            "message": "Token refreshed successfully",
+            "error_code": None,
+            "data": {
+                "access_token": access_token,
+                "refresh_token": new_refresh_token,
+                "token_type": "bearer"
+            },
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+        },
+    )
+
+@route.get("/token/verify")
+def verify_token(token: str = Depends(oauth2_scheme)):
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        return JSONResponse(
+            status_code=200,
+            content={
+                "status_code": 200,
+                "message": "Token is valid",
+                "error_code": None,
+                "data": {"user_id": payload.get("sub")},
+                "timestamp": datetime.utcnow().isoformat() + "Z",
+            },
+        )
+    except JWTError:
+        return JSONResponse(
+            status_code=401,
+            content={
+                "status_code": 401,
+                "message": "Invalid token",
+                "error_code": "INVALID_TOKEN",
+                "data": {},
+                "timestamp": datetime.utcnow().isoformat() + "Z",
+            },
+        )

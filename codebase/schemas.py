@@ -53,8 +53,19 @@ class UserRegistrationSchema(BaseModel):
     name: str
     phone_number: Optional[str] = None
     password: str
-    role_name: Literal["farmer", "super_admin"]  # KVK registers separately
-    
+    role_name: Literal["farmer", "super_admin", "kvk"]
+
+    # Optional KVK-association for farmers
+    kvk_id: Optional[str] = None
+
+    # KVK-specific fields
+    district: Optional[str] = None
+    state: Optional[str] = None
+    address: Optional[str] = None
+    pincode: Optional[str] = None
+    director_name: Optional[str] = None
+    established_year: Optional[str] = None
+
     @validator('phone_number')
     def validate_phone(cls, v):
         if v and not v.isdigit():
@@ -87,9 +98,8 @@ class KVKRegistrationSchema(BaseModel):
 
 
 class LoginSchema(BaseModel):
-    username: str  # Can be email or phone
+    username: str
     password: str
-    user_type: Literal["user", "kvk"]  # To distinguish between User and KVK login
 
 
 class UserResponseSchema(BaseModel):
@@ -100,8 +110,21 @@ class UserResponseSchema(BaseModel):
     phone_number: Optional[str]
     role_name: str
     is_active: bool
+    is_verified: Optional[bool]
     date_joined: datetime
 
+    # KVK-specific (optional)
+    district: Optional[str]
+    state: Optional[str]
+    address: Optional[str]
+    pincode: Optional[str]
+    director_name: Optional[str]
+    established_year: Optional[str]
+
+class TokenSchema(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    refresh_token: Optional[str] = None  # If you're using refresh tokens
 
 class KVKResponseSchema(BaseModel):
     id: str

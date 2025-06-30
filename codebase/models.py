@@ -1,5 +1,4 @@
 from sqlalchemy import UUID, Boolean, Column, ForeignKey, Integer, String, Float, Date, DateTime, Index, Text, UniqueConstraint
-from sqlalchemy.ext.declarative import declarative_base
 from datetime import datetime
 from database import Base
 import uuid
@@ -40,47 +39,23 @@ class Role(Base):
     name = Column(String(50), unique=True, index=True, nullable=False)  # farmer, kvk, super_admin
     description = Column(String(255), nullable=True, default="")
 
-
 class User(Base):
     __tablename__ = "users"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+
+    # Basic Auth Info
     username = Column(String(150), unique=True, nullable=False)
     email = Column(String(255), unique=True, nullable=False)
+    password_hash = Column(String(255), nullable=False)
+
+    # Personal Info
     name = Column(String(255), nullable=False)
     phone_number = Column(String(15), nullable=True)
-    password_hash = Column(String(255), nullable=False)
 
-    # Foreign Key
-    role_id = Column(Integer, ForeignKey("roles.id"), nullable=False)
-
-    date_joined = Column(DateTime, default=datetime.utcnow)
-    last_updated = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    is_active = Column(Boolean, default=True)
-    is_blocked = Column(Boolean, default=False)
-    blocked_until = Column(DateTime, nullable=True)
-    is_deleted = Column(Boolean, default=False)
-
-
-class KVK(Base):
-    __tablename__ = "kvks"
-
-    id = Column(Integer, primary_key=True, autoincrement=True, index=True)
-    kvk_name = Column(String(255), nullable=False)
-    kvk_code = Column(String(50), unique=True, nullable=False)  # Unique KVK identifier
-    email = Column(String(255), unique=True, nullable=False)
-    phone_number = Column(String(15), nullable=True)
-    password_hash = Column(String(255), nullable=False)
-
-    # Location details
-    district = Column(String(100), nullable=False)
-    state = Column(String(100), nullable=False)
-    address = Column(Text, nullable=True)
-    pincode = Column(String(10), nullable=True)
-
-    # Admin details
-    director_name = Column(String(255), nullable=True)
-    established_year = Column(String(4), nullable=True)
+    # Role & Hierarchy
+    role_id = Column(Integer, ForeignKey("roles.id"), nullable=False)  # farmer, kvk, super_admin
+    kvk_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)  # For farmer → KVK link
 
     # Status
     is_active = Column(Boolean, default=True)
@@ -93,25 +68,43 @@ class KVK(Base):
     date_joined = Column(DateTime, default=datetime.utcnow)
     last_updated = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+    # KVK-specific fields (nullable for non-KVKs)
+    district = Column(String(100), nullable=True)
+    state = Column(String(100), nullable=True)
+    address = Column(Text, nullable=True)
+    pincode = Column(String(10), nullable=True)
+    director_name = Column(String(255), nullable=True)
+    established_year = Column(String(4), nullable=True)
+
+    # Relationships
+    role = relationship("Role", backref="users")
+    kvk_user = relationship("User", remote_side=[id], backref="farmers")  # self-referencing
+
 
 class Farm(Base):
     __tablename__ = "farm"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
-    kvk_id = Column(Integer, ForeignKey("kvks.id"), nullable=False)
+
+    # Both farmer and kvk are users
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)  # Farmer
+    kvk_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)   # KVK
+
     # Spatial columns
     geometry = Column(Geometry("POLYGON"))
     center = Column(Geometry(geometry_type='POINT', srid=4326), nullable=True)
 
-    # Other attributes
+    # Farm attributes
     area = Column(Float, nullable=True)
     crop = Column(String(100), nullable=True)
     ai_yield = Column(Float, nullable=True)
     revenue = Column(Float, nullable=True)
-    kvk = Column(String(255), nullable=True)
     ndvi = Column(Float, nullable=True)
-    farmer_name = Column(String(255), nullable=True)
     farm_name = Column(String(255), nullable=True)
     lat = Column(Float, nullable=True)
     lon = Column(Float, nullable=True)
+
+    # Relationships
+    farmer = relationship("User", foreign_keys=[user_id], backref="farms")
+    kvk_user = relationship("User", foreign_keys=[kvk_id], backref="assigned_farms")
+
