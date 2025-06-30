@@ -1,0 +1,3 @@
+FARMER = 1
+KVK = 2
+SUPERADMIN = 3
