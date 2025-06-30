@@ -15,7 +15,7 @@ from apis import authentication, market_data,satellites,weather
     
 # from redis_listener import redis_listener
 
-origins = ["http://localhost", "http://localhost:3000/", ""]
+origins = ["http://localhost", "http://localhost:3000"]
 
 
 description = """
