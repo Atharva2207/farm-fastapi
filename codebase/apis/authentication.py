@@ -14,15 +14,16 @@ from models import Role, User
 from schemas import UserRegistrationSchema, UserResponseSchema, LoginSchema
 from database import get_db
 import uuid
+from fastapi.security import HTTPBearer
 
 SECRET_KEY = "your_secret_key_here"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 REFRESH_TOKEN_EXPIRE_DAYS = 7
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
+oauth2_scheme = HTTPBearer()
 
-route = APIRouter(prefix="/auth", tags=["Authentication"])
+route = APIRouter(prefix="/api", tags=["Authentication"])
 
 def create_access_token(data: dict, expires_delta: timedelta = None):
     to_encode = data.copy()
@@ -175,7 +176,8 @@ def login(payload: LoginSchema, db: Session = Depends(get_db)):
     response_data = {
         "access_token": access_token,
         "refresh_token": refresh_token,
-        "token_type": "bearer"
+        "token_type": "bearer",
+        "user": get_user_details(user)
     }
 
     return JSONResponse(
@@ -190,7 +192,7 @@ def login(payload: LoginSchema, db: Session = Depends(get_db)):
     )
 
 @route.post("/token/refresh")
-def refresh_token(refresh_token: str):
+def refresh_token(refresh_token: str, db: Session = Depends(get_db)):
     try:
         payload = jwt.decode(refresh_token, SECRET_KEY, algorithms=[ALGORITHM])
         if payload.get("type") != "refresh":
@@ -210,6 +212,7 @@ def refresh_token(refresh_token: str):
 
     access_token = create_access_token({"sub": user_id})
     new_refresh_token = create_refresh_token({"sub": user_id})
+    user = db.query(User).filter(User.id == user_id).first()
 
     return JSONResponse(
         status_code=200,
@@ -220,23 +223,26 @@ def refresh_token(refresh_token: str):
             "data": {
                 "access_token": access_token,
                 "refresh_token": new_refresh_token,
-                "token_type": "bearer"
+                "token_type": "bearer",
+                "user": get_user_details(user)
             },
             "timestamp": datetime.utcnow().isoformat() + "Z",
         },
     )
 
 @route.get("/token/verify")
-def verify_token(token: str = Depends(oauth2_scheme)):
+def verify_token(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(token.credentials, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id = payload.get("sub")
+        user = db.query(User).filter(User.id == user_id).first()
         return JSONResponse(
             status_code=200,
             content={
                 "status_code": 200,
                 "message": "Token is valid",
                 "error_code": None,
-                "data": {"user_id": payload.get("sub")},
+                "data": {"user": get_user_details(user)},
                 "timestamp": datetime.utcnow().isoformat() + "Z",
             },
         )
@@ -251,3 +257,27 @@ def verify_token(token: str = Depends(oauth2_scheme)):
                 "timestamp": datetime.utcnow().isoformat() + "Z",
             },
         )
+
+
+def get_user_details(user: User):
+    if not user:
+        return None
+    return {
+        "id": str(user.id),
+        "username": user.username,
+        "email": user.email,
+        "name": user.name,
+        "phone_number": user.phone_number,
+        "role_name": user.role.name if user.role else None,
+        "kvk_id": str(user.kvk_id) if user.kvk_id else None,
+        "district": user.district,
+        "state": user.state,
+        "address": user.address,
+        "pincode": user.pincode,
+        "director_name": user.director_name,
+        "established_year": user.established_year,
+        "is_active": user.is_active,
+        "is_verified": user.is_verified,
+        "is_blocked": user.is_blocked,
+        "date_joined": user.date_joined.isoformat() + "Z",
+    }
