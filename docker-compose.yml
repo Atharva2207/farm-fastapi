@@ -9,6 +9,6 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./code:/app
+      - ./codebase:/app
     env_file:
-      - ./code/.env
+      - ./codebase/.env
