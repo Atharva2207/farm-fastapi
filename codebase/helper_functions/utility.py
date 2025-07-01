@@ -1,8 +1,9 @@
 from datetime import datetime
+from decimal import Decimal
 from functools import wraps
 import re
-from typing import List
-
+from typing import Any, Optional, List
+from uuid import UUID
 from fastapi import status
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
@@ -180,3 +181,38 @@ def get_password_hash(password: str) -> str:
     from passlib.context import CryptContext
     pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
     return pwd_context.hash(password)
+
+def safe_serialize(obj):
+    if isinstance(obj, dict):
+        return {key: safe_serialize(value) for key, value in obj.items()}
+    elif isinstance(obj, list):
+        return [safe_serialize(item) for item in obj]
+    elif isinstance(obj, tuple):
+        return tuple(safe_serialize(item) for item in obj)
+    elif isinstance(obj, set):
+        return list(safe_serialize(item) for item in obj)
+    elif isinstance(obj, UUID):
+        return str(obj)
+    elif isinstance(obj, datetime):
+        return obj.isoformat() + "Z"
+    elif isinstance(obj, Decimal):
+        return float(obj)
+    else:
+        return obj
+
+def build_response(
+    data: Any,
+    message: str = "Success",
+    status_code: int = 200,
+    error_code: Optional[str] = None
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=status_code,
+        content=safe_serialize({
+            "status_code": status_code,
+            "message": message,
+            "error_code": error_code,
+            "data": data,
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+        })
+    )

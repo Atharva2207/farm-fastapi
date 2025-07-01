@@ -2,6 +2,10 @@ import re
 from pydantic import BaseModel, EmailStr, Field, constr, validator
 from typing import Literal, Optional, List
 from datetime import datetime
+from pydantic import BaseModel, Field, validator
+from typing import Optional, List
+from uuid import UUID
+from datetime import datetime
 
 
 class CurrentWeatherRequest(BaseModel):
@@ -137,3 +141,128 @@ class KVKResponseSchema(BaseModel):
     is_active: bool
     is_verified: bool
     date_joined: datetime
+
+
+class UserMini(BaseModel):
+    id: UUID
+    username: str
+    email: str
+    name: str
+
+    class Config:
+        orm_mode = True
+
+
+class FarmPlotCreateSchema(BaseModel):
+    user_id: UUID
+    kvk_id: UUID
+    geometry: Optional[str]
+    center: Optional[str]
+    area: Optional[float]
+    crop: Optional[str] = Field(..., max_length=100)
+    ai_yield: Optional[float]
+    revenue: Optional[float]
+    ndvi: Optional[float]
+    farm_name: Optional[str]
+    lat: Optional[float]
+    lon: Optional[float]
+
+
+class FarmPlotUpdateSchema(BaseModel):
+    geometry: Optional[str]
+    center: Optional[str]
+    area: Optional[float]
+    crop: Optional[str]
+    ai_yield: Optional[float]
+    revenue: Optional[float]
+    ndvi: Optional[float]
+    farm_name: Optional[str]
+    lat: Optional[float]
+    lon: Optional[float]
+
+
+class FarmPlotFlexibleSchema(BaseModel):
+    id: UUID
+    area: Optional[float]
+    crop: Optional[str]
+    ai_yield: Optional[float]
+    revenue: Optional[float]
+    ndvi: Optional[float]
+    geometry: Optional[str] = None
+    created_at: Optional[str]
+    farmer: Optional[UserMini] = None
+    kvk: Optional[UserMini] = None
+
+    class Config:
+        orm_mode = True
+
+class UserMini(BaseModel):
+    id: UUID
+    username: str
+    email: EmailStr
+    name: str
+
+    class Config:
+        orm_mode = True
+
+
+class UserFlexibleSchema(BaseModel):
+    id: UUID
+    username: str
+    email: EmailStr
+    name: str
+    phone_number: Optional[str] = None
+    role: Optional[UserMini] = None
+    kvk_user: Optional[UserMini] = None
+    is_active: bool
+    is_verified: bool
+    is_blocked: bool
+    blocked_until: Optional[datetime] = None
+    is_deleted: bool
+    date_joined: datetime
+    last_updated: datetime
+
+    # KVK-specific fields
+    district: Optional[str]
+    state: Optional[str]
+    address: Optional[str]
+    pincode: Optional[str]
+    director_name: Optional[str]
+    established_year: Optional[str]
+
+    class Config:
+        orm_mode = True
+
+
+class UserCreateSchema(BaseModel):
+    username: str = Field(..., min_length=3)
+    email: EmailStr
+    password: str = Field(..., min_length=6)
+    name: str
+    phone_number: Optional[str] = None
+    role_id: int
+    kvk_id: Optional[UUID] = None
+    district: Optional[str]
+    state: Optional[str]
+    address: Optional[str]
+    pincode: Optional[str]
+    director_name: Optional[str]
+    established_year: Optional[str]
+
+
+class UserUpdateSchema(BaseModel):
+    name: Optional[str]
+    email: Optional[EmailStr]
+    phone_number: Optional[str]
+    role_id: Optional[int]
+    kvk_id: Optional[UUID]
+    is_active: Optional[bool]
+    is_verified: Optional[bool]
+    is_blocked: Optional[bool]
+    blocked_until: Optional[datetime]
+    district: Optional[str]
+    state: Optional[str]
+    address: Optional[str]
+    pincode: Optional[str]
+    director_name: Optional[str]
+    established_year: Optional[str]

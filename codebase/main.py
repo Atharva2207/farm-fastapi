@@ -11,7 +11,7 @@ from fastapi_pagination import add_pagination
 import asyncio
 
 from env_variables import setting
-from apis import authentication, market_data,satellites,weather
+from apis import authentication, market_data, satellites, weather, farm, user
     
 # from redis_listener import redis_listener
 
@@ -64,6 +64,8 @@ app.include_router(authentication.route)
 app.include_router(market_data.route)
 # app.include_router(satellites.route)
 app.include_router(weather.route)
+app.include_router(farm.route)
+app.include_router(user.route)
 
 @app.get("/health")
 async def health_check():
