@@ -203,7 +203,7 @@ async def get_current_weather(
             "farm_info": {
                 "farm_id": str(farm.id),
                 "farm_name": farm.farm_name,
-                "farmer_name": farm.farmer_name,
+                "farmer_name": getattr(farm.farmer, "name", None),
                 "latitude": farm.lat,
                 "longitude": farm.lon,
                 "district": getattr(farm, 'district', None),
@@ -303,7 +303,7 @@ async def get_historic_weather(
             "farm_info": {
                 "farm_id": str(farm.id),
                 "farm_name": farm.farm_name,
-                "farmer_name": farm.farmer_name,
+                "farmer_name": getattr(farm.farmer, "name", None),
                 "latitude": farm.lat,
                 "longitude": farm.lon,
                 "district": getattr(farm, 'district', None),
@@ -402,7 +402,7 @@ async def get_forecast_weather(
             "farm_info": {
                 "farm_id": str(farm.id),
                 "farm_name": farm.farm_name,
-                "farmer_name": farm.farmer_name,
+                "farmer_name": getattr(farm.farmer, "name", None),
                 "latitude": farm.lat,
                 "longitude": farm.lon,
                 "district": getattr(farm, 'district', None),
