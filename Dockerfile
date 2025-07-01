@@ -16,9 +16,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the rest of the application code into the container
 COPY ./codebase .
 
-# Copy override the env file
-# TODO: Update this to .env
+# Copy and override the .env file
 COPY ./codebase/.env .env
 
-# Runs the migrations and start the server
-CMD alembic upgrade heads && uvicorn main:app --host 0.0.0.0 --port 8000
+# Run the migrations and start the server
+CMD ["sh", "-c", "alembic upgrade heads && uvicorn main:app --host 0.0.0.0 --port 8000"]
