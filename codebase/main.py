@@ -19,10 +19,10 @@ origins = ["http://localhost", "http://localhost:3000"]
 
 
 description = """
-Cloud9Space APIs for managing agricultural data and services.
+GenxAI APIs for managing agricultural data and services.
 """
 app = FastAPI(
-    title="Cloud9Space",
+    title="GenxAI",
     docs_url="/",
     redoc_url=None,
     description=description,
@@ -37,7 +37,7 @@ def custom_openapi():
     if app.openapi_schema:
         return app.openapi_schema
     openapi_schema = get_openapi(
-        title="Cloud9Space",
+        title="GenxAI",
         version="0.1.0",
         description="agricultural data and services APIs",
         routes=app.routes,
