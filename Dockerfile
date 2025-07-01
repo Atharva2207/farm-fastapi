@@ -20,4 +20,4 @@ COPY ./codebase .
 COPY ./codebase/.env .env
 
 # Run the migrations and start the server
-CMD ["sh", "-c", "alembic upgrade heads && uvicorn main:app --host 0.0.0.0 --port 8000"]
+CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port 8000"]
