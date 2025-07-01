@@ -116,8 +116,23 @@ def validate_time_format(start_time: str, end_time: str):
             }
         )
 
-def get_user_by_id(db: Session, user_id: str):
-    user = db.query(User).filter(User.id == user_id).first()
+def get_user_by_id(db: Session, user_id: str):    
+    # Validate UUID format before conversion
+    try:
+        user_uuid = uuid.UUID(user_id)
+    except ValueError:
+        return None, JSONResponse(
+            status_code=400,
+            content={
+                "status_code": 400,
+                "message": f"Invalid UUID format: '{user_id}'",
+                "error_code": "INVALID_UUID_FORMAT",
+                "data": {},
+                "timestamp": datetime.utcnow().isoformat() + 'Z'
+            }
+        )
+
+    user = db.query(User).filter(User.id == user_uuid).first()
     if not user:
         return None, JSONResponse(
             status_code=404,
@@ -130,6 +145,7 @@ def get_user_by_id(db: Session, user_id: str):
             }
         )
     return user, None
+
 
 @route.get("/current")
 async def get_current_weather(
