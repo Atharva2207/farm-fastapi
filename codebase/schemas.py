@@ -150,7 +150,7 @@ class UserMini(BaseModel):
     name: str
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 class FarmPlotCreateSchema(BaseModel):
@@ -194,7 +194,7 @@ class FarmPlotFlexibleSchema(BaseModel):
     kvk: Optional[UserMini] = None
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class UserMini(BaseModel):
     id: UUID
@@ -203,7 +203,7 @@ class UserMini(BaseModel):
     name: str
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 class UserFlexibleSchema(BaseModel):
@@ -231,7 +231,7 @@ class UserFlexibleSchema(BaseModel):
     established_year: Optional[str]
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 class UserCreateSchema(BaseModel):

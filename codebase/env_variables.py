@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     ALGORITHM: str
     TOMORROW_IO_BASE_URL: str
     TOMORROW_IO_API_KEY: str
+    SENTINEL_HUB_CLIENT_ID: str
+    SENTINEL_HUB_CLIENT_SECRET: str
+
     class Config:
         env_file = Path(Path(__file__).resolve().parent) / ".env"
         print("server started successfully!!")
