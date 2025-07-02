@@ -52,8 +52,8 @@ class ErrorResponse(BaseResponse):
     error: Optional[str] = None
 
 class UserRegistrationSchema(BaseModel):
-    username: str
-    email: EmailStr
+    username: Optional[str]
+    email: Optional[EmailStr]
     name: str
     phone_number: Optional[str] = None
     password: str
