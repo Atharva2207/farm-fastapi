@@ -49,7 +49,7 @@ RECORD_LIMIT = 5000
 BATCH_SIZE = 1000
 DEFAULT_PAGE_SIZE = 50
 
-route = APIRouter(prefix="/market", tags=["Market"])
+route = APIRouter(prefix="/api", tags=["Market"])
 
 
 def get_redis_client():

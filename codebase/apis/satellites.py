@@ -36,7 +36,7 @@ from models import Farm, Satellites, PlanetCollections, Indices, User
 from database import get_db
 
 
-route = APIRouter(prefix="/Satellite", tags=["Satellite"])
+route = APIRouter(prefix="/api", tags=["Satellite"])
 
 
 def get_validated_index(

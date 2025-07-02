@@ -10,7 +10,7 @@ from database import get_db
 from datetime import datetime
 from env_variables import setting
 
-route = APIRouter(prefix="/weather", tags=["Weather"])
+route = APIRouter(prefix="/api", tags=["Weather"])
 
 DEFAULT_WEATHER_FIELDS = [
     "temperature",
