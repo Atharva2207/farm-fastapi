@@ -234,14 +234,13 @@ async def get_current_weather(
 async def get_historic_weather(
     user_id: str,
     farm_id: str,
-    start_time: str,
-    end_time: str,
-    timesteps: str = "1d",
+    start_date: str,
+    end_date: str,
     units: str = "metric",
     db: Session = Depends(get_db)
 ):
     """
-    Get historical weather data for a farm.
+    Get historical weather data for a farm using Open-Meteo.
     """
     user, error_response = get_user_by_id(db, user_id)
     if error_response:
@@ -257,45 +256,50 @@ async def get_historic_weather(
             content={"detail": "This farm does not belong to the specified user."}
         )
 
-    if not setting.TOMORROW_IO_API_KEY:
-        return JSONResponse(
-            status_code=500,
-            content={"detail": "Weather API key not configured."}
-        )
-
-    if units not in ["metric", "imperial"]:
+    # Validate units
+    valid_units = ["metric", "imperial"]
+    if units not in valid_units:
         return JSONResponse(
             status_code=400,
             content={"detail": "Invalid units. Use 'metric' or 'imperial'."}
         )
 
-    valid_timesteps = ["1m", "5m", "15m", "30m", "1h", "1d"]
-    if timesteps not in valid_timesteps:
+    # Validate date format
+    try:
+        datetime.strptime(start_date, "%Y-%m-%d")
+        datetime.strptime(end_date, "%Y-%m-%d")
+    except ValueError:
         return JSONResponse(
             status_code=400,
-            content={"detail": f"Invalid timesteps. Use one of: {', '.join(valid_timesteps)}"}
+            content={"detail": "Dates must be in YYYY-MM-DD format."}
         )
 
-    is_valid, time_error = validate_time_format(start_time, end_time)
-    if not is_valid:
-        return time_error
+    # Configure units for Open-Meteo
+    temperature_unit = "celsius" if units == "metric" else "fahrenheit"
+    windspeed_unit = "kmh" if units == "metric" else "mph"
+    precipitation_unit = "mm" if units == "metric" else "inch"
 
-    location = f"{farm.lat},{farm.lon}"
+    # Build request
+    url = "https://archive-api.open-meteo.com/v1/archive"
+    params = {
+        "latitude": farm.lat,
+        "longitude": farm.lon,
+        "start_date": start_date,
+        "end_date": end_date,
+        "daily": ",".join([
+            "temperature_2m_max",
+            "temperature_2m_min",
+            "precipitation_sum",
+            "windspeed_10m_max"
+        ]),
+        "temperature_unit": temperature_unit,
+        "windspeed_unit": windspeed_unit,
+        "precipitation_unit": precipitation_unit,
+        "timezone": "auto"
+    }
 
     try:
-        response = requests.get(
-            f"{setting.TOMORROW_IO_BASE_URL}/timelines",
-            params={
-                'location': location,
-                'fields': ','.join(DEFAULT_WEATHER_FIELDS),
-                'timesteps': timesteps,
-                'startTime': start_time,
-                'endTime': end_time,
-                'units': units,
-                'apikey': setting.TOMORROW_IO_API_KEY
-            },
-            timeout=30
-        )
+        response = requests.get(url, params=params, timeout=30)
         response.raise_for_status()
         weather_data = response.json()
 
@@ -326,15 +330,13 @@ async def get_historic_weather(
                 "state": getattr(farm, 'state', None)
             },
             "query_info": {
-                "start_time": start_time,
-                "end_time": end_time,
-                "timesteps": timesteps,
+                "start_date": start_date,
+                "end_date": end_date,
                 "units": units
             },
             "timestamp": datetime.utcnow().isoformat() + 'Z'
         }
     )
-
 
 
 @route.get("/forecast")
