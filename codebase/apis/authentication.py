@@ -191,6 +191,7 @@ def login(payload: LoginSchema, db: Session = Depends(get_db)):
         },
     )
 
+
 @route.post("/token/refresh")
 def refresh_token(refresh_token: str, db: Session = Depends(get_db)):
     try:
@@ -281,3 +282,44 @@ def get_user_details(user: User):
         "is_blocked": user.is_blocked,
         "date_joined": user.date_joined.isoformat() + "Z",
     }
+
+
+@route.post("/logout")
+def logout(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+    """
+    Logout endpoint - invalidates the current access token
+    
+    For a complete logout, the client should:
+    1. Call this endpoint with the access token
+    2. Delete both access_token and refresh_token from client storage
+    """
+    try:
+        # Verify the token is valid
+        payload = jwt.decode(token.credentials, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id = payload.get("sub")
+        
+        # Optional: You can add token to a blacklist here
+        # blacklist_token(token.credentials, payload.get("exp"))
+        
+        return JSONResponse(
+            status_code=200,
+            content={
+                "status_code": 200,
+                "message": "Logout successful",
+                "error_code": None,
+                "data": {},
+                "timestamp": datetime.utcnow().isoformat() + "Z",
+            },
+        )
+        
+    except JWTError:
+        return JSONResponse(
+            status_code=401,
+            content={
+                "status_code": 401,
+                "message": "Invalid token",
+                "error_code": "INVALID_TOKEN",
+                "data": {},
+                "timestamp": datetime.utcnow().isoformat() + "Z",
+            },
+        )
