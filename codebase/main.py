@@ -62,7 +62,7 @@ app.add_middleware(SessionMiddleware, secret_key=setting.secret_key)
 
 app.include_router(authentication.route)
 app.include_router(market_data.route)
-# app.include_router(satellites.route)
+app.include_router(satellites.route)
 app.include_router(weather.route)
 app.include_router(farm.route)
 app.include_router(user.route)

@@ -1,20 +1,36 @@
-from sqlalchemy import UUID, Boolean, Column, ForeignKey, Integer, String, Float, Date, DateTime, Index, Text, UniqueConstraint
+from sqlalchemy import (
+    JSON,
+    UUID,
+    Boolean,
+    Column,
+    ForeignKey,
+    Integer,
+    String,
+    Float,
+    Date,
+    DateTime,
+    Index,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from datetime import datetime
 from database import Base
 import uuid
 from sqlalchemy.orm import relationship
 from geoalchemy2 import Geometry
 
+
 class Market(Base):
     __tablename__ = "market_data"
 
     id = Column(Integer, primary_key=True, index=True)
-    state = Column(String(100), default='')
-    district = Column(String(100), default='')
-    market = Column(String(100), default='')
-    commodity = Column(String(100), default='')
-    variety = Column(String(100), default='')
-    grade = Column(String(100), default='')
+    state = Column(String(100), default="")
+    district = Column(String(100), default="")
+    market = Column(String(100), default="")
+    commodity = Column(String(100), default="")
+    variety = Column(String(100), default="")
+    grade = Column(String(100), default="")
     arrival_date = Column(Date, nullable=False)
     min_price = Column(Float, default=0.0)
     max_price = Column(Float, default=0.0)
@@ -22,22 +38,35 @@ class Market(Base):
     updated_date = Column(DateTime, default=datetime.utcnow)
 
     __table_args__ = (
-        Index('idx_arrival_date', 'arrival_date'),
-        Index('idx_state', 'state'),
-        Index('idx_district', 'district'),
-        Index('idx_commodity', 'commodity'),
-        Index('idx_combo', 'state', 'district', 'market', 'commodity', 'variety', 'grade'),
-        UniqueConstraint('state', 'district', 'market', 'commodity', 'variety', 'grade', 'arrival_date', name='uq_market_unique'),
+        Index("idx_arrival_date", "arrival_date"),
+        Index("idx_state", "state"),
+        Index("idx_district", "district"),
+        Index("idx_commodity", "commodity"),
+        Index(
+            "idx_combo", "state", "district", "market", "commodity", "variety", "grade"
+        ),
+        UniqueConstraint(
+            "state",
+            "district",
+            "market",
+            "commodity",
+            "variety",
+            "grade",
+            "arrival_date",
+            name="uq_market_unique",
+        ),
     )
-
 
 
 class Role(Base):
     __tablename__ = "roles"
 
     id = Column(Integer, primary_key=True, autoincrement=True, index=True)
-    name = Column(String(50), unique=True, index=True, nullable=False)  # farmer, kvk, super_admin
+    name = Column(
+        String(50), unique=True, index=True, nullable=False
+    )  # farmer, kvk, super_admin
     description = Column(String(255), nullable=True, default="")
+
 
 class User(Base):
     __tablename__ = "users"
@@ -54,8 +83,12 @@ class User(Base):
     phone_number = Column(String(15), nullable=True)
 
     # Role & Hierarchy
-    role_id = Column(Integer, ForeignKey("roles.id"), nullable=False)  # farmer, kvk, super_admin
-    kvk_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)  # For farmer → KVK link
+    role_id = Column(
+        Integer, ForeignKey("roles.id"), nullable=False
+    )  # farmer, kvk, super_admin
+    kvk_id = Column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )  # For farmer → KVK link
 
     # Status
     is_active = Column(Boolean, default=True)
@@ -78,7 +111,9 @@ class User(Base):
 
     # Relationships
     role = relationship("Role", backref="users")
-    kvk_user = relationship("User", remote_side=[id], backref="farmers")  # self-referencing
+    kvk_user = relationship(
+        "User", remote_side=[id], backref="farmers"
+    )  # self-referencing
 
 
 class Farm(Base):
@@ -87,12 +122,14 @@ class Farm(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
 
     # Both farmer and kvk are users
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)  # Farmer
-    kvk_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)   # KVK
+    user_id = Column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
+    )  # Farmer
+    kvk_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)  # KVK
 
     # Spatial columns
     geometry = Column(Geometry("POLYGON"))
-    center = Column(Geometry(geometry_type='POINT', srid=4326), nullable=True)
+    center = Column(Geometry(geometry_type="POINT", srid=4326), nullable=True)
 
     # Farm attributes
     area = Column(Float, nullable=True)
@@ -107,4 +144,44 @@ class Farm(Base):
     # Relationships
     farmer = relationship("User", foreign_keys=[user_id], backref="farms")
     kvk_user = relationship("User", foreign_keys=[kvk_id], backref="assigned_farms")
+    bbox = Column(JSON, nullable=False)
 
+
+class Satellites(Base):
+    __tablename__ = "satellites"
+
+    name = Column(String, primary_key=True)  # Full Sentinel/Planet name
+    code = Column(String, nullable=False)  # e.g., "S1", "S2"
+    region_url = Column(String, nullable=False)
+    is_catalogue_enabled = Column(Boolean, default=True)
+
+
+class PlanetCollections(Base):
+    __tablename__ = "planet_collections"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    farm_id = Column(String, nullable=False)
+    collection_id = Column(String, nullable=False)
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+
+    def __init__(self, farm_id, collection_id):
+        self.farm_id = farm_id
+        self.collection_id = collection_id
+
+
+class Indices(Base):
+    __tablename__ = "indices"
+
+    name = Column(String, primary_key=True, nullable=False)
+    code = Column(String, nullable=False)  # Formerly 'alias'
+    evalscript = Column(String, nullable=False)
+    statistical_evalscript = Column(String, nullable=True)
+    satellite = Column(
+        String, ForeignKey("satellites.name"), primary_key=True, nullable=False
+    )
+    legend = Column(JSON, nullable=True)
+    description = Column(String, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=func.now(), nullable=False)
+    updated_at = Column(
+        DateTime(timezone=True), default=func.now(), onupdate=func.now(), nullable=False
+    )
