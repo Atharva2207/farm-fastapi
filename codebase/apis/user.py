@@ -67,6 +67,7 @@ def serialize_user(user: User, include: Optional[List[str]] = None) -> dict:
 def list_users(
     db: Session = Depends(get_db),
     id: Optional[UUID] = Query(None),
+    kvk_id: Optional[UUID] = Query(None),
     username: Optional[str] = Query(None),
     email: Optional[str] = Query(None),
     role: Optional[str] = Query(None),
@@ -79,6 +80,8 @@ def list_users(
 
     if id:
         query = query.filter(User.id == id)
+    if kvk_id:
+        query = query.filter(User.kvk_id == kvk_id)
     if username:
         query = query.filter(User.username == username)
     if email:
