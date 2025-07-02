@@ -306,6 +306,7 @@ async def list_satellite_available_dates(
     request: Request,
     user_id: str,
     farm_id: str,
+    satellite: str = None,  # NEW: Optional satellite filter parameter
     start_date: date = None,
     end_date: date = None,
     response: Response = None,
@@ -314,6 +315,10 @@ async def list_satellite_available_dates(
 ):
     """
     Get available satellite dates for a specific farm.
+    
+    Args:
+        satellite (str, optional): Filter by specific satellite code (e.g., "S1", "S2", "S6"). 
+                                  If not provided, returns dates for all available satellites.
     """
     # Date validation
     if start_date and end_date and end_date < start_date:
@@ -338,7 +343,9 @@ async def list_satellite_available_dates(
         end_date = datetime.today().date()
         start_date = end_date - timedelta(days=365)
 
-    redis_key = f"catalogue_{farm_id}_{start_date.strftime('%Y-%m-%d')}_{end_date.strftime('%Y-%m-%d')}"
+    # Update redis key to include satellite filter for proper caching
+    satellite_key = satellite if satellite else "all"
+    redis_key = f"catalogue_{farm_id}_{satellite_key}_{start_date.strftime('%Y-%m-%d')}_{end_date.strftime('%Y-%m-%d')}"
 
     try:
         farm = json.loads(get_farm_geometry(db, user_id, farm_id)["geom"])
@@ -355,52 +362,83 @@ async def list_satellite_available_dates(
                 config_cache[region_url] = config
             return config_cache[region_url]
 
-        satellites = (
-            db.query(Satellites).filter(Satellites.is_catalogue_enabled == True).all()
-        )
         catalog_searches = []
 
-        for satellite in satellites:
-            config = get_config(satellite.region_url)
-            catalog = SentinelHubCatalog(config=config)
-            search = catalog.search(
-                collection=satellite.name, bbox=bbox, time=(start_date, end_date)
-            )
-            catalog_searches.append((search, satellite))
+        # Handle regular satellites (S1, S2, S3, S5, etc.)
+        if not satellite or satellite != "S6":
+            satellites_query = db.query(Satellites).filter(Satellites.is_catalogue_enabled == True)
+            
+            # Apply satellite filter if provided
+            if satellite and satellite != "S6":
+                satellites_query = satellites_query.filter(Satellites.code == satellite)
+            
+            satellites = satellites_query.all()
 
-        planets = (
-            db.query(PlanetCollections)
-            .filter(PlanetCollections.farm_id == farm_id)
-            .all()
-        )
-        for planet in planets:
-            config = get_config("https://services.sentinel-hub.com")
-            catalog = SentinelHubCatalog(config=config)
-            search = catalog.search(
-                collection="byoc-" + planet.collection_id,
-                bbox=bbox,
-                time=(start_date, end_date),
+            # Validate satellite exists if filter was applied
+            if satellite and satellite != "S6" and not satellites:
+                return JSONResponse(
+                    status_code=404,
+                    content={"detail": f"Satellite '{satellite}' not found or not enabled for catalogue search."}
+                )
+
+            for satellite_obj in satellites:
+                config = get_config(satellite_obj.region_url)
+                catalog = SentinelHubCatalog(config=config)
+                search = catalog.search(
+                    collection=satellite_obj.name, bbox=bbox, time=(start_date, end_date)
+                )
+                catalog_searches.append((search, satellite_obj))
+
+        # Handle Planet collections (S6) - only if satellite is None or "S6"
+        if not satellite or satellite == "S6":
+            planets = (
+                db.query(PlanetCollections)
+                .filter(PlanetCollections.farm_id == farm_id)
+                .all()
             )
-            catalog_searches.append((search, None))
+            
+            # If user specifically requested S6 but no Planet collections exist
+            if satellite == "S6" and not planets:
+                return JSONResponse(
+                    status_code=404,
+                    content={"detail": "No Planet collections (S6) found for this farm."}
+                )
+            
+            for planet in planets:
+                config = get_config("https://services.sentinel-hub.com")
+                catalog = SentinelHubCatalog(config=config)
+                search = catalog.search(
+                    collection="byoc-" + planet.collection_id,
+                    bbox=bbox,
+                    time=(start_date, end_date),
+                )
+                catalog_searches.append((search, None))  # None indicates Planet collection
 
         response_items = []
         for search, satellite_info in catalog_searches:
             products = list(search)
             for product in products:
                 if "byoc-" in product["collection"]:
+                    # This is a Planet collection (S6)
                     response_items.append(
                         {
                             "satellite": "S6",
                             "datetime": product["properties"]["datetime"],
+                            "collection": product["collection"],  # Add collection info for Planet
                         }
                     )
                 else:
+                    # This is a regular satellite
                     response_items.append(
                         {
                             "satellite": satellite_info.code,
                             "datetime": product["properties"]["datetime"],
+                            "collection": product["collection"],  # Add collection info
                         }
                     )
+
+        # Sort by datetime for better user experience
+        response_items.sort(key=lambda x: x["datetime"], reverse=True)
 
         try:
             tomorrow = datetime.now(tz=timezone.utc).replace(
@@ -411,12 +449,26 @@ async def list_satellite_available_dates(
         except Exception as e:
             print(f"Cache error: {str(e)}")
 
+        # Build response message
+        if satellite:
+            message = f"Available {satellite} satellite dates retrieved successfully."
+        else:
+            message = "Available satellite dates retrieved successfully."
+
         return JSONResponse(
             status_code=200,
             content={
                 "status_code": 200,
-                "message": "Available satellite dates retrieved successfully.",
+                "message": message,
                 "data": response_items,
+                "metadata": {
+                    "satellite_filter": satellite,
+                    "date_range": {
+                        "start_date": start_date.isoformat(),
+                        "end_date": end_date.isoformat()
+                    },
+                    "total_dates": len(response_items)
+                },
                 "timestamp": datetime.utcnow().isoformat() + "Z",
             },
         )
@@ -425,6 +477,74 @@ async def list_satellite_available_dates(
         return JSONResponse(
             status_code=http_exc.status_code, content={"detail": http_exc.detail}
         )
+    except Exception as e:
+        traceback.print_exc()
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "Something went wrong. Check with admin"},
+        )
+
+
+# Optional: Helper function to get available satellites for a farm
+@route.get("/available-satellites")
+async def list_available_satellites(
+    request: Request,
+    user_id: str,
+    farm_id: str,
+    db: Session = Depends(get_db),
+):
+    """
+    Get list of available satellites for a specific farm.
+    Useful for UI dropdowns and validation.
+    """
+    try:
+        # Validate user and farm access
+        user, error_response = get_user_by_id(db, user_id)
+        if error_response:
+            return error_response
+
+        farm, error_response = get_farm_by_id(db, farm_id)
+        if error_response:
+            return error_response
+
+        if str(farm.user_id) != str(user.id):
+            return JSONResponse(
+                status_code=403,
+                content={"detail": "This farm does not belong to the specified user."},
+            )
+
+        # Get enabled satellites
+        satellites = (
+            db.query(Satellites.code, Satellites.name)
+            .filter(Satellites.is_catalogue_enabled == True)
+            .all()
+        )
+
+        # Check for Planet collections
+        planet_collections = (
+            db.query(PlanetCollections)
+            .filter(PlanetCollections.farm_id == farm_id)
+            .count()
+        )
+
+        available_satellites = [
+            {"code": sat.code, "name": sat.name} for sat in satellites
+        ]
+
+        # Add Planet if collections exist
+        if planet_collections > 0:
+            available_satellites.append({"code": "S6", "name": "Planet"})
+
+        return JSONResponse(
+            status_code=200,
+            content={
+                "status_code": 200,
+                "message": "Available satellites retrieved successfully.",
+                "data": available_satellites,
+                "timestamp": datetime.utcnow().isoformat() + "Z",
+            },
+        )
+
     except Exception as e:
         traceback.print_exc()
         return JSONResponse(
@@ -493,31 +613,31 @@ async def generate_satellite_image(
             redis_key = redis_key + "_" + str(value.replace(" ", "_"))
 
         # Check cache first
-        try:
-            cache_response = cache.get(redis_key)
-            if cache_response:
-                response.headers["x-cached"] = "True"
-                cached_data = json.loads(cache_response)
-                return JSONResponse(
-                    status_code=200,
-                    content={
-                        "status_code": 200,
-                        "message": "Satellite image retrieved successfully (cached).",
-                        "data": cached_data,
-                        "farm_info": {
-                            "farm_id": str(farm.id),
-                            "farm_name": farm.farm_name,
-                            "farmer_name": getattr(farm.farmer, "name", None),
-                            "latitude": farm.lat,
-                            "longitude": farm.lon,
-                            "district": getattr(farm, "district", None),
-                            "state": getattr(farm, "state", None),
-                        },
-                        "timestamp": datetime.utcnow().isoformat() + "Z",
-                    },
-                )
-        except Exception as e:
-            print(f"Cache error: {str(e)}")
+        # try:
+        #     cache_response = cache.get(redis_key)
+        #     if cache_response:
+        #         response.headers["x-cached"] = "True"
+        #         cached_data = json.loads(cache_response)
+        #         return JSONResponse(
+        #             status_code=200,
+        #             content={
+        #                 "status_code": 200,
+        #                 "message": "Satellite image retrieved successfully (cached).",
+        #                 "data": cached_data,
+        #                 "farm_info": {
+        #                     "farm_id": str(farm.id),
+        #                     "farm_name": farm.farm_name,
+        #                     "farmer_name": getattr(farm.farmer, "name", None),
+        #                     "latitude": farm.lat,
+        #                     "longitude": farm.lon,
+        #                     "district": getattr(farm, "district", None),
+        #                     "state": getattr(farm, "state", None),
+        #                 },
+        #                 "timestamp": datetime.utcnow().isoformat() + "Z",
+        #             },
+        #         )
+        # except Exception as e:
+        #     print(f"Cache error: {str(e)}")
 
         # Setup Sentinel Hub config
         config = SHConfig()
