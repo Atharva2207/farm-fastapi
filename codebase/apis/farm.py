@@ -24,6 +24,11 @@ def serialize_farm(farm: Farm, include: Optional[List[str]] = None) -> dict:
         "ai_yield": farm.ai_yield,
         "revenue": farm.revenue,
         "ndvi": farm.ndvi,
+        "carbon_organic_gperkg": farm.carbon_organic_gperkg,
+        "nitrogen_gperkg": farm.nitrogen_gperkg,
+        "ph": farm.ph,
+        "phosphorus_ppm": farm.phosphorus_ppm,
+        "potassium_ppm": farm.potassium_ppm,
         "created_at": farm.farmer.date_joined.isoformat() + "Z" if farm.farmer else None
     }
 

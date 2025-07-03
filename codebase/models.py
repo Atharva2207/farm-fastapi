@@ -145,6 +145,12 @@ class Farm(Base):
     farmer = relationship("User", foreign_keys=[user_id], backref="farms")
     kvk_user = relationship("User", foreign_keys=[kvk_id], backref="assigned_farms")
     bbox = Column(JSON, nullable=False)
+    carbon_organic_gperkg = Column(Float, nullable=True)
+    nitrogen_gperkg = Column(Float, nullable=True)
+    ph = Column(Float, nullable=True)
+    phosphorus_ppm = Column(Float, nullable=True)
+    potassium_ppm = Column(Float, nullable=True)
+
 
 
 class Satellites(Base):

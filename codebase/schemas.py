@@ -79,28 +79,6 @@ class UserRegistrationSchema(BaseModel):
         return v
 
 
-class KVKRegistrationSchema(BaseModel):
-    kvk_name: str
-    kvk_code: str
-    email: EmailStr
-    phone_number: Optional[str] = None
-    password: str
-    district: str
-    state: str
-    address: Optional[str] = None
-    pincode: Optional[str] = None
-    director_name: Optional[str] = None
-    established_year: Optional[str] = None
-    
-    @validator('phone_number')
-    def validate_phone(cls, v):
-        if v and not v.isdigit():
-            raise ValueError('Phone number must contain only digits')
-        if v and len(v) < 8:
-            raise ValueError('Phone number must be at least 8 digits')
-        return v
-
-
 class LoginSchema(BaseModel):
     username: str
     password: str
@@ -130,18 +108,6 @@ class TokenSchema(BaseModel):
     token_type: str = "bearer"
     refresh_token: Optional[str] = None  # If you're using refresh tokens
 
-class KVKResponseSchema(BaseModel):
-    id: str
-    kvk_name: str
-    kvk_code: str
-    email: str
-    phone_number: Optional[str]
-    district: str
-    state: str
-    is_active: bool
-    is_verified: bool
-    date_joined: datetime
-
 
 class UserMini(BaseModel):
     id: UUID
@@ -166,6 +132,11 @@ class FarmPlotCreateSchema(BaseModel):
     farm_name: Optional[str]
     lat: Optional[float]
     lon: Optional[float]
+    carbon_organic_gperkg: Optional[float]
+    nitrogen_gperkg: Optional[float]
+    ph: Optional[float]
+    phosphorus_ppm: Optional[float]
+    potassium_ppm: Optional[float]
 
 
 class FarmPlotUpdateSchema(BaseModel):
@@ -179,6 +150,12 @@ class FarmPlotUpdateSchema(BaseModel):
     farm_name: Optional[str]
     lat: Optional[float]
     lon: Optional[float]
+    carbon_organic_gperkg: Optional[float]
+    nitrogen_gperkg: Optional[float]
+    ph: Optional[float]
+    phosphorus_ppm: Optional[float]
+    potassium_ppm: Optional[float]
+
 
 
 class FarmPlotFlexibleSchema(BaseModel):
@@ -192,7 +169,12 @@ class FarmPlotFlexibleSchema(BaseModel):
     created_at: Optional[str]
     farmer: Optional[UserMini] = None
     kvk: Optional[UserMini] = None
-
+    carbon_organic_gperkg: Optional[float]
+    nitrogen_gperkg: Optional[float]
+    ph: Optional[float]
+    phosphorus_ppm: Optional[float]
+    potassium_ppm: Optional[float]
+    
     class Config:
         from_attributes = True
 
