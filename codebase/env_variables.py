@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     TOMORROW_IO_API_KEY: str
     SENTINEL_HUB_CLIENT_ID: str
     SENTINEL_HUB_CLIENT_SECRET: str
+    allowed_origins: List[str] = []
 
     class Config:
         env_file = Path(Path(__file__).resolve().parent) / ".env"

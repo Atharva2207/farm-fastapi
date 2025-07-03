@@ -15,8 +15,6 @@ from apis import authentication, market_data, satellites, weather, farm, user
     
 # from redis_listener import redis_listener
 
-origins = ["http://localhost", "http://localhost:3000"]
-
 
 description = """
 GenxAI APIs for managing agricultural data and services.
@@ -52,7 +50,7 @@ app.openapi = custom_openapi
 # System middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=setting.allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
