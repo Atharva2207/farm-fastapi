@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     TOMORROW_IO_API_KEY: str
     SENTINEL_HUB_CLIENT_ID: str
     SENTINEL_HUB_CLIENT_SECRET: str
-    allowed_origins: List[str] = []
+    allowed_origins_raw: str = ""
 
     @property
     def allowed_origins(self) -> List[str]:
