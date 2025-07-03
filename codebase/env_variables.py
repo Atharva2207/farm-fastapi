@@ -22,6 +22,10 @@ class Settings(BaseSettings):
     SENTINEL_HUB_CLIENT_SECRET: str
     allowed_origins: List[str] = []
 
+    @property
+    def allowed_origins(self) -> List[str]:
+        return [origin.strip() for origin in self.allowed_origins_raw.split(",") if origin.strip()]
+
     class Config:
         env_file = Path(Path(__file__).resolve().parent) / ".env"
         print("server started successfully!!")
