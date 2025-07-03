@@ -171,6 +171,13 @@ class FarmPlotFlexibleSchema(BaseModel):
     phosphorus_ppm: Optional[float]
     potassium_ppm: Optional[float]
 
+    # Added missing fields
+    farm_name: Optional[str]
+    lat: Optional[float]
+    lon: Optional[float]
+    bbox: Optional[dict]
+    sowing_date: Optional[date]
+
     class Config:
         from_attributes = True
 
