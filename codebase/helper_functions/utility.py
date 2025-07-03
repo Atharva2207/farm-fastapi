@@ -8,7 +8,7 @@ from fastapi import status
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from passlib.context import CryptContext
-
+from fastapi.encoders import jsonable_encoder
 from database import SessionLocal
 from models import Role, User
 
@@ -208,7 +208,7 @@ def build_response(
 ) -> JSONResponse:
     return JSONResponse(
         status_code=status_code,
-        content=safe_serialize({
+        content=jsonable_encoder({
             "status_code": status_code,
             "message": message,
             "error_code": error_code,

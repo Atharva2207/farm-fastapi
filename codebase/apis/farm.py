@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
 from typing import Optional, List
 from uuid import UUID
-
+from datetime import date, datetime
 from database import get_db
 from models import Farm, User
 from schemas import FarmPlotCreateSchema, FarmPlotUpdateSchema, FarmPlotFlexibleSchema
@@ -14,6 +14,9 @@ from helper_functions.utility  import build_response, safe_serialize  # Assuming
 route = APIRouter(prefix="/api", tags=["Farm"])
 
 def serialize_farm(farm: Farm, include: Optional[List[str]] = None) -> dict:
+    def safe_date(val):
+        return val.isoformat() if isinstance(val, (date, datetime)) else val
+
     data = {
         "id": str(farm.id),
         "area": farm.area,
@@ -26,10 +29,15 @@ def serialize_farm(farm: Farm, include: Optional[List[str]] = None) -> dict:
         "ph": farm.ph,
         "phosphorus_ppm": farm.phosphorus_ppm,
         "potassium_ppm": farm.potassium_ppm,
+        "farm_name": farm.farm_name,
+        # "lat": farm.lat,
+        # "lon": farm.lon,
+        # "bbox": farm.bbox,
+        "sowing_date": safe_date(farm.sowing_date),
         "created_at": (
-                farm.farmer.date_joined.isoformat() + "Z"
-                if farm.farmer and farm.farmer.date_joined else None
-            )
+            farm.farmer.date_joined.isoformat() + "Z"
+            if farm.farmer and farm.farmer.date_joined else None
+        ),
     }
 
     if include:

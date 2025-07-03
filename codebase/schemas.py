@@ -156,27 +156,27 @@ class FarmPlotUpdateSchema(BaseModel):
 
 class FarmPlotFlexibleSchema(BaseModel):
     id: UUID
-    area: Optional[float]
-    crop: Optional[str]
-    ai_yield: Optional[float]
-    revenue: Optional[float]
-    ndvi: Optional[float]
+    area: Optional[float] = None
+    crop: Optional[str] = None
+    ai_yield: Optional[float] = None
+    revenue: Optional[float] = None
+    ndvi: Optional[float] = None
     geometry: Optional[str] = None
-    created_at: Optional[str]
+    created_at: Optional[str] = None
     farmer: Optional[UserMini] = None
     kvk: Optional[UserMini] = None
-    carbon_organic_gperkg: Optional[float]
-    nitrogen_gperkg: Optional[float]
-    ph: Optional[float]
-    phosphorus_ppm: Optional[float]
-    potassium_ppm: Optional[float]
+    carbon_organic_gperkg: Optional[float] = None
+    nitrogen_gperkg: Optional[float] = None
+    ph: Optional[float] = None
+    phosphorus_ppm: Optional[float] = None
+    potassium_ppm: Optional[float] = None
 
     # Added missing fields
-    farm_name: Optional[str]
-    lat: Optional[float]
-    lon: Optional[float]
-    bbox: Optional[dict]
-    sowing_date: Optional[date]
+    farm_name: Optional[str] = None
+    # lat: Optional[float] = None
+    # lon: Optional[float] = None
+    # bbox: Optional[List[float]] = None
+    sowing_date: Optional[date] = None
 
     class Config:
         from_attributes = True
