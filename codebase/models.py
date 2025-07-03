@@ -3,6 +3,7 @@ from sqlalchemy import (
     UUID,
     Boolean,
     Column,
+    Computed,
     ForeignKey,
     Integer,
     String,
@@ -129,17 +130,27 @@ class Farm(Base):
 
     # Spatial columns
     geometry = Column(Geometry("POLYGON"))
-    center = Column(Geometry(geometry_type="POINT", srid=4326), nullable=True)
-
-    # Farm attributes
-    area = Column(Float, nullable=True)
+    area = Column(
+        Float,
+        Computed(
+            "((ST_Area(ST_setSRID(geometry, 4326)::geography)) * 0.0002471054)", True
+        ),
+    )
+    center = Column(Geometry("POINT"), Computed("(ST_Centroid(geometry))", True))
     crop = Column(String(100), nullable=True)
     ai_yield = Column(Float, nullable=True)
     revenue = Column(Float, nullable=True)
     ndvi = Column(Float, nullable=True)
     farm_name = Column(String(255), nullable=True)
-    lat = Column(Float, nullable=True)
-    lon = Column(Float, nullable=True)
+    lat = Column(
+        Float,
+        Computed("(ST_Y(ST_Centroid(geometry)))", True)
+    )
+    lon = Column(
+        Float,
+        Computed("(ST_X(ST_Centroid(geometry)))", True)
+    )
+
 
     # Relationships
     farmer = relationship("User", foreign_keys=[user_id], backref="farms")
