@@ -53,16 +53,13 @@ class ErrorResponse(BaseResponse):
 
 class UserRegistrationSchema(BaseModel):
     username: Optional[str]
-    email: Optional[EmailStr]
+    email: Optional[EmailStr] = None
     name: str
     phone_number: Optional[str] = None
     password: str
     role_name: Literal["farmer", "super_admin", "kvk"]
-
-    # Optional KVK-association for farmers
     kvk_id: Optional[str] = None
 
-    # KVK-specific fields
     district: Optional[str] = None
     state: Optional[str] = None
     address: Optional[str] = None
@@ -77,7 +74,6 @@ class UserRegistrationSchema(BaseModel):
         if v and len(v) < 8:
             raise ValueError('Phone number must be at least 8 digits')
         return v
-
 
 class LoginSchema(BaseModel):
     username: str

@@ -40,7 +40,8 @@ def create_refresh_token(data: dict):
 @route.post("/register")
 def register_user(payload: UserRegistrationSchema, db: Session = Depends(get_db)):
     existing_user = db.query(User).filter(
-        (User.username == payload.username) | (User.email == payload.email)
+        (User.username == payload.username) 
+        # | (payload.email and User.email == payload.email)
     ).first()
     if existing_user:
         return JSONResponse(

@@ -75,7 +75,7 @@ class User(Base):
 
     # Basic Auth Info
     username = Column(String(150), unique=True, nullable=False)
-    email = Column(String(255), unique=True, nullable=False)
+    email = Column(String(255), unique=True, nullable=True)
     password_hash = Column(String(255), nullable=False)
 
     # Personal Info
