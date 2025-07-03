@@ -3,15 +3,17 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from typing import Optional, List
 from uuid import UUID
-from datetime import datetime
 
 from database import get_db
-from models import User, Role
+from models import User, Role, Farm
 from schemas import UserFlexibleSchema, UserCreateSchema, UserUpdateSchema
 from helper_functions.utility import build_response
 from fastapi_pagination import Page, paginate
 from fastapi_pagination.ext.sqlalchemy import paginate as sqlalchemy_paginate
 from fastapi_pagination import Params
+
+from sqlalchemy import func, distinct
+
 route = APIRouter(prefix="/api/users", tags=["Users"])
 
 def serialize_user(user: User, include: Optional[List[str]] = None) -> dict:
@@ -138,3 +140,70 @@ def delete_user(id: UUID, db: Session = Depends(get_db)):
     db.delete(user)
     db.commit()
     return build_response({"message": "User deleted successfully"})
+
+
+
+@route.get("/overview-metrics")
+def get_overview_metrics(
+    db: Session = Depends(get_db),
+    kvk_id: Optional[UUID] = Query(None),
+    farmer_id: Optional[UUID] = Query(None),
+    farm_id: Optional[UUID] = Query(None),
+):
+    filters = []
+    if kvk_id:
+        filters.append(Farm.kvk_id == kvk_id)
+    if farmer_id:
+        filters.append(Farm.user_id == farmer_id)
+    if farm_id:
+        filters.append(Farm.id == farm_id)
+
+    # --- FARM METRICS ---
+    farm_query = db.query(Farm).filter(*filters)
+    total_farms = farm_query.count()
+    total_area = db.query(func.sum(Farm.area)).filter(*filters).scalar() or 0
+    avg_yield = db.query(func.avg(Farm.ai_yield)).filter(*filters).scalar() or 0
+    avg_ndvi = db.query(func.avg(Farm.ndvi)).filter(*filters).scalar() or 0
+    total_crops = db.query(func.count(distinct(Farm.crop))).filter(*filters).scalar() or 0
+
+    # --- USER METRICS ---
+    kvk_role_id = db.query(Role.id).filter(Role.name == "kvk").scalar()
+    farmer_role_id = db.query(Role.id).filter(Role.name == "farmer").scalar()
+
+    if kvk_id or farmer_id or farm_id:
+        filtered_farms = farm_query.all()
+        kvk_ids = {f.kvk_id for f in filtered_farms}
+        farmer_ids = {f.user_id for f in filtered_farms}
+
+        total_kvks = db.query(User).filter(User.id.in_(kvk_ids), User.role_id == kvk_role_id).count()
+        total_farmers = db.query(User).filter(User.id.in_(farmer_ids), User.role_id == farmer_role_id).count()
+    else:
+        total_kvks = db.query(User).filter(User.role_id == kvk_role_id).count()
+        total_farmers = db.query(User).filter(User.role_id == farmer_role_id).count()
+
+    # --- CURRENT KVK INFO ---
+    current_kvk = None
+    if kvk_id:
+        kvk_user = db.query(User).filter(User.id == kvk_id).first()
+        if kvk_user:
+            current_kvk = {
+                "id": str(kvk_user.id),
+                "name": kvk_user.name,
+                "district": kvk_user.district,
+                "state": kvk_user.state,
+                "email": kvk_user.email,
+            }
+
+    # --- Final Response ---
+    metrics = {
+        "current_kvk": current_kvk,
+        "total_kvks": total_kvks,
+        "total_farmers": total_farmers,
+        "total_farms": total_farms,
+        "total_area": round(total_area, 3),
+        "average_yield": round(avg_yield, 3),
+        "average_ndvi": round(avg_ndvi, 3),
+        "total_crops": total_crops,
+    }
+
+    return build_response(metrics, message="Overview metrics fetched successfully")

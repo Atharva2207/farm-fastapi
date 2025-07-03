@@ -1,7 +1,7 @@
 import re
 from pydantic import BaseModel, EmailStr, Field, constr, validator
 from typing import Literal, Optional, List
-from datetime import datetime
+from datetime import datetime, date
 from pydantic import BaseModel, Field, validator
 from typing import Optional, List
 from uuid import UUID
@@ -117,22 +117,23 @@ class UserMini(BaseModel):
 
 class FarmPlotCreateSchema(BaseModel):
     user_id: UUID
-    kvk_id: UUID
-    geometry: Optional[str]
-    center: Optional[str]
-    area: Optional[float]
+    kvk_id: Optional[UUID] = None
+    sowing_date: Optional[date] = None 
+    geometry: Optional[str] = None
+    center: Optional[str] = None
+    area: Optional[float] = None
     crop: Optional[str] = Field(..., max_length=100)
-    ai_yield: Optional[float]
-    revenue: Optional[float]
-    ndvi: Optional[float]
-    farm_name: Optional[str]
-    lat: Optional[float]
-    lon: Optional[float]
-    carbon_organic_gperkg: Optional[float]
-    nitrogen_gperkg: Optional[float]
-    ph: Optional[float]
-    phosphorus_ppm: Optional[float]
-    potassium_ppm: Optional[float]
+    ai_yield: Optional[float] = None
+    revenue: Optional[float] = None
+    ndvi: Optional[float] = None
+    farm_name: Optional[str] = None
+    lat: Optional[float] = None
+    lon: Optional[float] = None
+    carbon_organic_gperkg: Optional[float] = None
+    nitrogen_gperkg: Optional[float] = None
+    ph: Optional[float] = None
+    phosphorus_ppm: Optional[float] = None
+    potassium_ppm: Optional[float] = None
 
 
 class FarmPlotUpdateSchema(BaseModel):

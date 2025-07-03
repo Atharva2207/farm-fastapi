@@ -1,13 +1,10 @@
 from fastapi import APIRouter, Depends, Query, HTTPException
-from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
-from typing import Optional, List, Any
+from typing import Optional, List
 from uuid import UUID
-from datetime import datetime
-from decimal import Decimal
 
 from database import get_db
-from models import Farm
+from models import Farm, User
 from schemas import FarmPlotCreateSchema, FarmPlotUpdateSchema, FarmPlotFlexibleSchema
 from geoalchemy2.shape import to_shape
 from fastapi_pagination import Page, paginate
@@ -83,10 +80,25 @@ def read_farmplot(id: UUID, db: Session = Depends(get_db)):
 
 @route.post("/farmplots/", response_model=FarmPlotFlexibleSchema)
 def create_farmplot(payload: FarmPlotCreateSchema, db: Session = Depends(get_db)):
-    new_farm = Farm(**payload.dict())
+    data = payload.dict()
+
+    # If kvk_id is not provided, try to get it from farmer's record
+    if not data.get("kvk_id"):
+        farmer = db.query(User).filter(User.id == data["user_id"]).first()
+        if not farmer:
+            raise HTTPException(status_code=404, detail="Farmer not found")
+        if not farmer.kvk_id:
+            raise HTTPException(
+                status_code=400,
+                detail="KVK not provided and farmer is not linked to any KVK"
+            )
+        data["kvk_id"] = farmer.kvk_id
+
+    new_farm = Farm(**data)
     db.add(new_farm)
     db.commit()
     db.refresh(new_farm)
+
     return build_response(serialize_farm(new_farm, ["geometry", "farmer", "kvk"]))
 
 @route.put("/farmplots/{id}/", response_model=FarmPlotFlexibleSchema)

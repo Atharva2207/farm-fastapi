@@ -150,6 +150,7 @@ class Farm(Base):
     ph = Column(Float, nullable=True)
     phosphorus_ppm = Column(Float, nullable=True)
     potassium_ppm = Column(Float, nullable=True)
+    sowing_date = Column(Date, nullable=True)
 
 
 
