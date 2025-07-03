@@ -3,7 +3,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from typing import Optional, List
 from uuid import UUID
-
+from sqlalchemy import func
 from database import get_db
 from models import User, Role, Farm
 from schemas import UserFlexibleSchema, UserCreateSchema, UserUpdateSchema
@@ -16,7 +16,9 @@ from sqlalchemy import func, distinct
 
 route = APIRouter(prefix="/api/users", tags=["Users"])
 
-def serialize_user(user: User, include: Optional[List[str]] = None) -> dict:
+from sqlalchemy import func, or_
+
+def serialize_user(user: User, include: Optional[List[str]] = None, db: Session = None, filters: dict = None) -> dict:
     data = {
         "id": str(user.id),
         "username": user.username,
@@ -48,7 +50,8 @@ def serialize_user(user: User, include: Optional[List[str]] = None) -> dict:
             data["parent"] = {
                 "id": str(user.parent.id),
                 "username": user.parent.username,
-                "name": user.parent.name
+                "name": user.parent.name,
+                "role_name": user.parent.role.name if user.parent.role else None  
             }
         if "children" in include:
             data["children"] = [
@@ -56,13 +59,41 @@ def serialize_user(user: User, include: Optional[List[str]] = None) -> dict:
                     "id": str(child.id),
                     "username": child.username,
                     "email": child.email,
-                    "name": child.name
+                    "name": child.name,
+                    "role_name": child.role.name if child.role else None  
                 }
                 for child in user.children if not child.is_deleted
             ]
+        if ("total_area" in include or "farm_count" in include) and db:
+            farm_query = db.query(
+                func.coalesce(func.sum(Farm.area), 0),
+                func.count(Farm.id)
+            )
+
+            role_name = user.role.name.lower() if user.role else ""
+
+            if role_name == "super_admin":
+                child_ids = [child.id for child in user.children if not child.is_deleted]
+                farm_query = farm_query.filter(Farm.kvk_id.in_(child_ids))
+
+            elif role_name in ["kvk", "admin"]:
+                farm_query = farm_query.filter(Farm.kvk_id == user.id)
+
+            elif role_name == "farmer":
+                farm_query = farm_query.filter(Farm.user_id == user.id)
+
+            # Apply additional filters (crop, etc.)
+            if filters:
+                if filters.get("crop"):
+                    farm_query = farm_query.filter(Farm.crop.ilike(f"%{filters['crop']}%"))
+
+            total_area, farm_count = farm_query.first()
+            if "total_area" in include:
+                data["total_area"] = round(total_area or 0, 4)
+            if "farm_count" in include:
+                data["farm_count"] = farm_count
 
     return data
-
 
 
 @route.get("/", response_model=List[UserFlexibleSchema])
@@ -75,8 +106,9 @@ def list_users(
     role: Optional[str] = Query(None),
     state: Optional[str] = Query(None),
     district: Optional[str] = Query(None),
+    crop: Optional[str] = Query(None),
     include: Optional[str] = Query(None),
-    params: Params = Depends()  # enables limit/offset/page query params
+    params: Params = Depends()
 ):
     query = db.query(User).filter(User.is_deleted == False)
 
@@ -97,9 +129,13 @@ def list_users(
 
     include_fields = include.split(",") if include else []
 
-    # Run paginated query and serialize each result
+    # Collect farm-related filters to apply during serialization
+    farm_filters = {
+        "crop": crop,
+    }
+
     result = sqlalchemy_paginate(query, params)
-    result.items = [serialize_user(user, include_fields) for user in result.items]
+    result.items = [serialize_user(user, include_fields, db=db, filters=farm_filters) for user in result.items]
 
     return build_response(result.dict())
 

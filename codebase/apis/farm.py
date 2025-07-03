@@ -26,7 +26,10 @@ def serialize_farm(farm: Farm, include: Optional[List[str]] = None) -> dict:
         "ph": farm.ph,
         "phosphorus_ppm": farm.phosphorus_ppm,
         "potassium_ppm": farm.potassium_ppm,
-        "created_at": farm.farmer.date_joined.isoformat() + "Z" if farm.farmer else None
+        "created_at": (
+                farm.farmer.date_joined.isoformat() + "Z"
+                if farm.farmer and farm.farmer.date_joined else None
+            )
     }
 
     if include:

@@ -174,7 +174,6 @@ class FarmPlotFlexibleSchema(BaseModel):
     class Config:
         from_attributes = True
 
-
 class UserFlexibleSchema(BaseModel):
     id: UUID
     username: str
@@ -197,6 +196,9 @@ class UserFlexibleSchema(BaseModel):
     pincode: Optional[str]
     director_name: Optional[str]
     established_year: Optional[str]
+
+    total_area: Optional[float] = None
+    farm_count: Optional[int] = None
 
     class Config:
         from_attributes = True
