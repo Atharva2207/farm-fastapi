@@ -2,10 +2,7 @@ import re
 from pydantic import BaseModel, EmailStr, Field, constr, validator
 from typing import Literal, Optional, List
 from datetime import datetime, date
-from pydantic import BaseModel, Field, validator
-from typing import Optional, List
 from uuid import UUID
-from datetime import datetime
 
 
 class CurrentWeatherRequest(BaseModel):
@@ -51,6 +48,7 @@ class ErrorResponse(BaseResponse):
     error_code: Optional[str] = None
     error: Optional[str] = None
 
+
 class UserRegistrationSchema(BaseModel):
     username: Optional[str]
     email: Optional[EmailStr] = None
@@ -58,7 +56,7 @@ class UserRegistrationSchema(BaseModel):
     phone_number: Optional[str] = None
     password: str
     role_name: Literal["farmer", "super_admin", "kvk"]
-    kvk_id: Optional[str] = None
+    parent_id: Optional[str] = None
 
     district: Optional[str] = None
     state: Optional[str] = None
@@ -74,6 +72,7 @@ class UserRegistrationSchema(BaseModel):
         if v and len(v) < 8:
             raise ValueError('Phone number must be at least 8 digits')
         return v
+
 
 class LoginSchema(BaseModel):
     username: str
@@ -99,16 +98,17 @@ class UserResponseSchema(BaseModel):
     director_name: Optional[str]
     established_year: Optional[str]
 
+
 class TokenSchema(BaseModel):
     access_token: str
     token_type: str = "bearer"
-    refresh_token: Optional[str] = None  # If you're using refresh tokens
+    refresh_token: Optional[str] = None
 
 
 class UserMini(BaseModel):
     id: UUID
     username: str
-    email: str
+    email: EmailStr
     name: str
 
     class Config:
@@ -117,8 +117,8 @@ class UserMini(BaseModel):
 
 class FarmPlotCreateSchema(BaseModel):
     user_id: UUID
-    kvk_id: Optional[UUID] = None
-    sowing_date: Optional[date] = None 
+    parent_id: Optional[UUID] = None
+    sowing_date: Optional[date] = None
     geometry: Optional[str] = None
     center: Optional[str] = None
     area: Optional[float] = None
@@ -154,7 +154,6 @@ class FarmPlotUpdateSchema(BaseModel):
     potassium_ppm: Optional[float]
 
 
-
 class FarmPlotFlexibleSchema(BaseModel):
     id: UUID
     area: Optional[float]
@@ -171,15 +170,6 @@ class FarmPlotFlexibleSchema(BaseModel):
     ph: Optional[float]
     phosphorus_ppm: Optional[float]
     potassium_ppm: Optional[float]
-    
-    class Config:
-        from_attributes = True
-
-class UserMini(BaseModel):
-    id: UUID
-    username: str
-    email: EmailStr
-    name: str
 
     class Config:
         from_attributes = True
@@ -192,7 +182,7 @@ class UserFlexibleSchema(BaseModel):
     name: str
     phone_number: Optional[str] = None
     role: Optional[UserMini] = None
-    kvk_user: Optional[UserMini] = None
+    parent: Optional[UserMini] = None
     is_active: bool
     is_verified: bool
     is_blocked: bool
@@ -201,7 +191,6 @@ class UserFlexibleSchema(BaseModel):
     date_joined: datetime
     last_updated: datetime
 
-    # KVK-specific fields
     district: Optional[str]
     state: Optional[str]
     address: Optional[str]
@@ -215,33 +204,33 @@ class UserFlexibleSchema(BaseModel):
 
 class UserCreateSchema(BaseModel):
     username: str = Field(..., min_length=3)
-    email: EmailStr
+    email: Optional[EmailStr] = None
     password: str = Field(..., min_length=6)
     name: str
     phone_number: Optional[str] = None
     role_id: int
-    kvk_id: Optional[UUID] = None
-    district: Optional[str]
-    state: Optional[str]
-    address: Optional[str]
-    pincode: Optional[str]
-    director_name: Optional[str]
-    established_year: Optional[str]
+    parent_id: Optional[UUID] = None
+    district: Optional[str] = None
+    state: Optional[str] = None
+    address: Optional[str] = None
+    pincode: Optional[str] = None
+    director_name: Optional[str] = None
+    established_year: Optional[str] = None
 
 
 class UserUpdateSchema(BaseModel):
-    name: Optional[str]
-    email: Optional[EmailStr]
-    phone_number: Optional[str]
-    role_id: Optional[int]
-    kvk_id: Optional[UUID]
-    is_active: Optional[bool]
-    is_verified: Optional[bool]
-    is_blocked: Optional[bool]
-    blocked_until: Optional[datetime]
-    district: Optional[str]
-    state: Optional[str]
-    address: Optional[str]
-    pincode: Optional[str]
-    director_name: Optional[str]
-    established_year: Optional[str]
+    name: Optional[str] = None
+    email: Optional[EmailStr] = None
+    phone_number: Optional[str] = None
+    role_id: Optional[int] = None
+    parent_id: Optional[UUID] = None
+    is_active: Optional[bool] = None
+    is_verified: Optional[bool] = None
+    is_blocked: Optional[bool] = None
+    blocked_until: Optional[datetime] = None
+    district: Optional[str] = None
+    state: Optional[str] = None
+    address: Optional[str] = None
+    pincode: Optional[str] = None
+    director_name: Optional[str] = None
+    established_year: Optional[str] = None

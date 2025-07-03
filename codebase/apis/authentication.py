@@ -1,9 +1,7 @@
-# Refactored authentication router using single User model with JWT
-
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, status, HTTPException
 from fastapi.responses import JSONResponse
-from fastapi.security import OAuth2PasswordBearer
+from fastapi.security import OAuth2PasswordBearer, HTTPBearer
 from sqlalchemy.orm import Session
 from jose import JWTError, jwt
 from helper_functions.utility import (
@@ -13,8 +11,6 @@ from helper_functions.utility import (
 from models import Role, User
 from schemas import UserRegistrationSchema, UserResponseSchema, LoginSchema
 from database import get_db
-import uuid
-from fastapi.security import HTTPBearer
 
 SECRET_KEY = "your_secret_key_here"
 ALGORITHM = "HS256"
@@ -68,38 +64,35 @@ def register_user(payload: UserRegistrationSchema, db: Session = Depends(get_db)
         db.commit()
         db.refresh(role)
 
-    # If farmer, validate and attach kvk_id
-    kvk_user_id = None
+    parent_id = None
     if payload.role_name == "farmer":
         if not payload.kvk_id:
             return JSONResponse(
                 status_code=400,
                 content={
                     "status_code": 400,
-                    "message": "Farmer must be linked to a KVK",
-                    "error_code": "KVK_REQUIRED",
+                    "message": "Farmer must be linked to a Paren",
+                    "error_code": "PARENT_REQUIRED",
                     "data": {},
                     "timestamp": datetime.utcnow().isoformat() + "Z",
                 },
             )
-        kvk_user = db.query(User).filter(User.id == payload.kvk_id, User.role.has(name="kvk")).first()
-        if not kvk_user:
+        parent_user = db.query(User).filter(User.id == payload.parent_id, User.role.has(name="kvk")).first()
+        if not parent_user:
             return JSONResponse(
                 status_code=404,
                 content={
                     "status_code": 404,
-                    "message": "KVK with given ID not found",
-                    "error_code": "KVK_NOT_FOUND",
+                    "message": "Parent with given ID not found",
+                    "error_code": "PARENT_NOT_FOUND",
                     "data": {},
                     "timestamp": datetime.utcnow().isoformat() + "Z",
                 },
             )
-        kvk_user_id = kvk_user.id
+        parent_id = parent_user.id  
 
-    # Hash the password
     hashed_password = get_password_hash(payload.password)
 
-    # Create the user
     user = User(
         username=payload.username,
         email=payload.email,
@@ -107,13 +100,13 @@ def register_user(payload: UserRegistrationSchema, db: Session = Depends(get_db)
         phone_number=payload.phone_number,
         password_hash=hashed_password,
         role_id=role.id,
-        kvk_id=kvk_user_id if payload.role_name == "farmer" else None,
-        district=payload.district if payload.role_name == "kvk" else None,
-        state=payload.state if payload.role_name == "kvk" else None,
-        address=payload.address if payload.role_name == "kvk" else None,
-        pincode=payload.pincode if payload.role_name == "kvk" else None,
-        director_name=payload.director_name if payload.role_name == "kvk" else None,
-        established_year=payload.established_year if payload.role_name == "kvk" else None,
+        parent_id=parent_id,
+        district=payload.district,
+        state=payload.state,
+        address=payload.address,
+        pincode=payload.pincode,
+        director_name=payload.director_name,
+        established_year=payload.established_year,
     )
     db.add(user)
     db.commit()
@@ -129,7 +122,7 @@ def register_user(payload: UserRegistrationSchema, db: Session = Depends(get_db)
         "role": payload.role_name,
         "is_active": user.is_active,
         "date_joined": user.date_joined.isoformat() + "Z",
-        "kvk_id": str(user.kvk_id) if user.kvk_id else None,
+        "parent_id": str(user.parent_id) if user.parent_id else None,
     }
 
     return JSONResponse(
@@ -271,7 +264,7 @@ def get_user_details(user: User):
         "name": user.name,
         "phone_number": user.phone_number,
         "role_name": user.role.name if user.role else None,
-        "kvk_id": str(user.kvk_id) if user.kvk_id else None,
+        "parent_id": str(user.parent_id) if user.parent_id else None,
         "district": user.district,
         "state": user.state,
         "address": user.address,

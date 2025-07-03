@@ -87,9 +87,9 @@ class User(Base):
     role_id = Column(
         Integer, ForeignKey("roles.id"), nullable=False
     )  # farmer, kvk, super_admin
-    kvk_id = Column(
+    parent_id = Column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
-    )  # For farmer → KVK link
+    )  
 
     # Status
     is_active = Column(Boolean, default=True)
@@ -112,9 +112,7 @@ class User(Base):
 
     # Relationships
     role = relationship("Role", backref="users")
-    kvk_user = relationship(
-        "User", remote_side=[id], backref="farmers"
-    )  # self-referencing
+    parent = relationship("User", remote_side=[id], backref="children")
 
 
 class Farm(Base):

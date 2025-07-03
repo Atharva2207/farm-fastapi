@@ -82,17 +82,17 @@ def read_farmplot(id: UUID, db: Session = Depends(get_db)):
 def create_farmplot(payload: FarmPlotCreateSchema, db: Session = Depends(get_db)):
     data = payload.dict()
 
-    # If kvk_id is not provided, try to get it from farmer's record
+    # If kvk_id is not provided, try to infer from farmer's parent_id
     if not data.get("kvk_id"):
         farmer = db.query(User).filter(User.id == data["user_id"]).first()
         if not farmer:
             raise HTTPException(status_code=404, detail="Farmer not found")
-        if not farmer.kvk_id:
+        if not farmer.parent_id:
             raise HTTPException(
                 status_code=400,
                 detail="KVK not provided and farmer is not linked to any KVK"
             )
-        data["kvk_id"] = farmer.kvk_id
+        data["kvk_id"] = farmer.parent_id  # use parent_id as kvk_id for saving
 
     new_farm = Farm(**data)
     db.add(new_farm)
