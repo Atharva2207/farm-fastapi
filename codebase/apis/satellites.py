@@ -1110,11 +1110,37 @@ async def get_ndvi_analysis(
 
         # Step 2: Query farms for this KVK with NDVI values
         if user.role.name == "super_admin":
-            # Super admin can see all farms
+            # Super admin can see farms from KVKs under their hierarchy
+            # First get KVKs that have this super_admin as parent
+            kvk_users = (
+                db.query(User)
+                .filter(
+                    User.parent_id == user_id,
+                    User.role.has(name="kvk")
+                )
+                .all()
+            )
+            
+            if not kvk_users:
+                return JSONResponse(
+                    status_code=404,
+                    content={
+                        "message": "No KVKs found under this super admin",
+                        "status_code": 404,
+                        "data": None,
+                        "timestamp": datetime.utcnow().isoformat() + "Z",
+                    },
+                )
+            
+            # Get all kvk_ids under this super_admin
+            kvk_ids = [kvk.id for kvk in kvk_users]
+            
+            # Query farms that belong to these KVKs
             farms_query = (
                 db.query(Farm)
                 .options(joinedload(Farm.farmer))
                 .filter(
+                    Farm.kvk_id.in_(kvk_ids),  # Farms belonging to KVKs under this super_admin
                     Farm.ndvi.isnot(None),  # Only farms with NDVI values
                     Farm.ndvi != 0,  # Exclude farms with zero NDVI
                 )
@@ -1135,7 +1161,7 @@ async def get_ndvi_analysis(
 
         if not farms_query:
             role_specific_message = (
-                "No farms with NDVI data found in the system"
+                "No farms with NDVI data found under KVKs managed by this super admin"
                 if user.role.name == "super_admin"
                 else f"No farms with NDVI data found assigned to KVK: {user.name}"
             )
@@ -1165,6 +1191,14 @@ async def get_ndvi_analysis(
 
         mean_ndvi = statistics.mean(ndvi_values)
 
+        # Create a mapping of kvk_id to kvk_name for quick lookup
+        kvk_name_map = {}
+        if user.role.name == "super_admin":
+            for kvk in kvk_users:
+                kvk_name_map[str(kvk.id)] = kvk.name
+        else:
+            kvk_name_map[str(user.id)] = user.name
+
         # Step 5: Separate farms into highest and lowest NDVI
         highest_ndvi_farms = []
         lowest_ndvi_farms = []
@@ -1176,6 +1210,7 @@ async def get_ndvi_analysis(
                 "farmer_name": farm.farmer.name if farm.farmer else None,
                 "farmer_id": str(farm.user_id),
                 "kvk_id": str(farm.kvk_id),
+                "kvk_name": kvk_name_map.get(str(farm.kvk_id), "Unknown KVK"),  # Added KVK name
                 "ndvi_value": farm.ndvi,
                 "latitude": farm.lat,
                 "longitude": farm.lon,
@@ -1218,17 +1253,12 @@ async def get_ndvi_analysis(
 
         # Step 6: Create response data
         analysis_data = {
-            "requesting_user_id": user_id,
+            "requesting_user_id": str(user_id),
             "user_role": user.role.name if user.role else None,
             "user_name": user.name,
-            "kvk_info": (
-                {
-                    "district": user.district,
-                    "state": user.state,
-                    "director_name": user.director_name,
-                    "established_year": user.established_year,
-                }
-                if user.role and user.role.name == "kvk"
+            "managed_kvks": (
+                [{"kvk_id": str(kvk.id), "kvk_name": kvk.name} for kvk in kvk_users]
+                if user.role.name == "super_admin"
                 else None
             ),
             "total_farms": len(farms_query),
