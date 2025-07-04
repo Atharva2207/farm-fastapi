@@ -3,7 +3,7 @@ import os
 import shutil
 import statistics
 import traceback
-from typing import Literal
+from typing import Dict, List, Literal
 import uuid
 import rasterio
 from sentinelhub import (
@@ -33,7 +33,7 @@ from uuid import uuid4
 from cache import get_redis
 from env_variables import setting
 from database import get_db
-from models import Farm, Satellites, PlanetCollections, Indices, User
+from models import Farm, NDVIMeanValues, Satellites, PlanetCollections, Indices, User
 from database import get_db
 
 
@@ -1114,13 +1114,10 @@ async def get_ndvi_analysis(
             # First get KVKs that have this super_admin as parent
             kvk_users = (
                 db.query(User)
-                .filter(
-                    User.parent_id == user_id,
-                    User.role.has(name="kvk")
-                )
+                .filter(User.parent_id == user_id, User.role.has(name="kvk"))
                 .all()
             )
-            
+
             if not kvk_users:
                 return JSONResponse(
                     status_code=404,
@@ -1131,16 +1128,18 @@ async def get_ndvi_analysis(
                         "timestamp": datetime.utcnow().isoformat() + "Z",
                     },
                 )
-            
+
             # Get all kvk_ids under this super_admin
             kvk_ids = [kvk.id for kvk in kvk_users]
-            
+
             # Query farms that belong to these KVKs
             farms_query = (
                 db.query(Farm)
                 .options(joinedload(Farm.farmer))
                 .filter(
-                    Farm.kvk_id.in_(kvk_ids),  # Farms belonging to KVKs under this super_admin
+                    Farm.kvk_id.in_(
+                        kvk_ids
+                    ),  # Farms belonging to KVKs under this super_admin
                     Farm.ndvi.isnot(None),  # Only farms with NDVI values
                     Farm.ndvi != 0,  # Exclude farms with zero NDVI
                 )
@@ -1210,7 +1209,9 @@ async def get_ndvi_analysis(
                 "farmer_name": farm.farmer.name if farm.farmer else None,
                 "farmer_id": str(farm.user_id),
                 "kvk_id": str(farm.kvk_id),
-                "kvk_name": kvk_name_map.get(str(farm.kvk_id), "Unknown KVK"),  # Added KVK name
+                "kvk_name": kvk_name_map.get(
+                    str(farm.kvk_id), "Unknown KVK"
+                ),  # Added KVK name
                 "ndvi_value": farm.ndvi,
                 "latitude": farm.lat,
                 "longitude": farm.lon,
@@ -1326,6 +1327,88 @@ async def get_ndvi_analysis(
             content={
                 "message": "Internal server error occurred during NDVI analysis",
                 "status_code": 500,
+                "data": None,
+                "timestamp": datetime.utcnow().isoformat() + "Z",
+            },
+        )
+
+
+@route.get("/ndvi-mean-values")
+def get_ndvi_mean_values(
+    farm_id: str,
+    user_id: str,
+    db: Session = Depends(get_db),
+):
+    try:
+        # Validate farm and user
+        farm = (
+            db.query(Farm).filter(Farm.id == farm_id, Farm.user_id == user_id).first()
+        )
+        if not farm:
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "message": "Invalid farm_id or user_id.",
+                    "status_code": 400,
+                    "data": None,
+                    "timestamp": datetime.utcnow().isoformat() + "Z",
+                },
+            )
+
+        if not farm.farm_name:
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "message": "Farm does not have a farm_name.",
+                    "status_code": 400,
+                    "data": None,
+                    "timestamp": datetime.utcnow().isoformat() + "Z",
+                },
+            )
+
+        ndvi_record = (
+            db.query(NDVIMeanValues)
+            .filter(NDVIMeanValues.farm_name == farm.farm_name)
+            .first()
+        )
+        if not ndvi_record:
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "message": "NDVI data not found for the farm.",
+                    "status_code": 400,
+                    "data": None,
+                    "timestamp": datetime.utcnow().isoformat() + "Z",
+                },
+            )
+
+        # Reverse year order: 2025 -> 2025
+        years = {str(year): [] for year in reversed(range(2021, 2026))}
+
+        for year in years.keys():
+            for month in range(1, 13):
+                if year == "2025" and month > 6:
+                    break  # Skip months after June 2025
+                month_str = f"_{year}_{month:02d}"
+                value = getattr(ndvi_record, month_str, None)
+                years[year].append(value if value is not None else None)
+
+        return JSONResponse(
+            status_code=200,
+            content={
+                "message": "NDVI mean values retrieved successfully.",
+                "status_code": 200,
+                "data": years,
+                "timestamp": datetime.utcnow().isoformat() + "Z",
+            },
+        )
+
+    except Exception as ve:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "message": f"Invalid data: {str(ve)}",
+                "status_code": 400,
                 "data": None,
                 "timestamp": datetime.utcnow().isoformat() + "Z",
             },
