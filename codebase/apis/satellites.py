@@ -1,6 +1,7 @@
 import io
 import os
 import shutil
+import statistics
 import traceback
 from typing import Literal
 import uuid
@@ -18,7 +19,7 @@ from sentinelhub.constants import ResamplingType
 from fastapi import APIRouter, Depends, HTTPException, status, Response, Query, Request
 from fastapi.responses import JSONResponse
 from datetime import date, datetime, timedelta, timezone
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import case, func
 from PIL import Image, ImageColor
 from starlette.background import BackgroundTasks
@@ -186,7 +187,6 @@ def get_user_by_id(db: Session, user_id: str):
     return user, None
 
 
-
 def get_farm_geometry(db: Session, user_id: str, farm_id: str):
     user, error_response = get_user_by_id(db, user_id)
     if error_response:
@@ -214,7 +214,9 @@ def get_farm_geometry(db: Session, user_id: str, farm_id: str):
         db.query(
             func.ST_AsGeoJSON(Farm.geometry).label("geom"),
             Farm.bbox.label("bbox"),
-            func.ST_Area(func.ST_Transform(Farm.geometry, 3857)).label("area_sqm")  # Area in square meters
+            func.ST_Area(func.ST_Transform(Farm.geometry, 3857)).label(
+                "area_sqm"
+            ),  # Area in square meters
         )
         .filter(Farm.user_id == user.id, Farm.id == farm_id)
         .first()
@@ -222,20 +224,20 @@ def get_farm_geometry(db: Session, user_id: str, farm_id: str):
 
     if not farm_geom_query:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, 
-            detail="Farm geometry not found"
+            status_code=status.HTTP_404_NOT_FOUND, detail="Farm geometry not found"
         )
 
     # Parse the geometry JSON
     geom_data = json.loads(farm_geom_query.geom)
-    
+
     # Use stored bbox (it's already a list from JSONB)
     bbox_list = farm_geom_query.bbox if farm_geom_query.bbox else []
-    
+
     # Add properties with bbox and area
     geom_data["properties"] = {
         "bbox": bbox_list,  # This is already [min_lon, min_lat, max_lon, max_lat]
-        "area": float(farm_geom_query.area_sqm) / 4047  # Convert to acres (1 acre = 4047 sqm)
+        "area": float(farm_geom_query.area_sqm)
+        / 4047,  # Convert to acres (1 acre = 4047 sqm)
     }
 
     # Return in the expected format
@@ -272,7 +274,7 @@ def get_farm(db: Session, user_id: str, farm_id: str):
         db.query(
             func.ST_AsGeoJSON(Farm.geometry).label("geom"),
             Farm.bbox.label("bbox"),
-            func.ST_Area(func.ST_Transform(Farm.geometry, 3857)).label("area_sqm")
+            func.ST_Area(func.ST_Transform(Farm.geometry, 3857)).label("area_sqm"),
         )
         .filter(Farm.user_id == user.id, Farm.id == farm_id)
         .first()
@@ -280,21 +282,21 @@ def get_farm(db: Session, user_id: str, farm_id: str):
 
     if not farm_data_query:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Farm data not found"
+            status_code=status.HTTP_404_NOT_FOUND, detail="Farm data not found"
         )
 
     # Parse the geometry JSON and add properties
     geom_data = json.loads(farm_data_query.geom)
     geom_data["properties"] = {
         "bbox": farm_data_query.bbox if farm_data_query.bbox else [],
-        "area": float(farm_data_query.area_sqm) / 4047  # Convert to acres
+        "area": float(farm_data_query.area_sqm) / 4047,  # Convert to acres
     }
 
     return {"geom": json.dumps(geom_data)}
 
 
 # Optional: Function to manually update bbox for existing farms (if needed)
+
 
 def remove_folder(path: str):
     if os.path.exists(path):
@@ -315,9 +317,9 @@ async def list_satellite_available_dates(
 ):
     """
     Get available satellite dates for a specific farm.
-    
+
     Args:
-        satellite (str, optional): Filter by specific satellite code (e.g., "S1", "S2", "S6"). 
+        satellite (str, optional): Filter by specific satellite code (e.g., "S1", "S2", "S6").
                                   If not provided, returns dates for all available satellites.
     """
     # Date validation
@@ -366,26 +368,32 @@ async def list_satellite_available_dates(
 
         # Handle regular satellites (S1, S2, S3, S5, etc.)
         if not satellite or satellite != "S6":
-            satellites_query = db.query(Satellites).filter(Satellites.is_catalogue_enabled == True)
-            
+            satellites_query = db.query(Satellites).filter(
+                Satellites.is_catalogue_enabled == True
+            )
+
             # Apply satellite filter if provided
             if satellite and satellite != "S6":
                 satellites_query = satellites_query.filter(Satellites.code == satellite)
-            
+
             satellites = satellites_query.all()
 
             # Validate satellite exists if filter was applied
             if satellite and satellite != "S6" and not satellites:
                 return JSONResponse(
                     status_code=404,
-                    content={"detail": f"Satellite '{satellite}' not found or not enabled for catalogue search."}
+                    content={
+                        "detail": f"Satellite '{satellite}' not found or not enabled for catalogue search."
+                    },
                 )
 
             for satellite_obj in satellites:
                 config = get_config(satellite_obj.region_url)
                 catalog = SentinelHubCatalog(config=config)
                 search = catalog.search(
-                    collection=satellite_obj.name, bbox=bbox, time=(start_date, end_date)
+                    collection=satellite_obj.name,
+                    bbox=bbox,
+                    time=(start_date, end_date),
                 )
                 catalog_searches.append((search, satellite_obj))
 
@@ -396,14 +404,16 @@ async def list_satellite_available_dates(
                 .filter(PlanetCollections.farm_id == farm_id)
                 .all()
             )
-            
+
             # If user specifically requested S6 but no Planet collections exist
             if satellite == "S6" and not planets:
                 return JSONResponse(
                     status_code=404,
-                    content={"detail": "No Planet collections (S6) found for this farm."}
+                    content={
+                        "detail": "No Planet collections (S6) found for this farm."
+                    },
                 )
-            
+
             for planet in planets:
                 config = get_config("https://services.sentinel-hub.com")
                 catalog = SentinelHubCatalog(config=config)
@@ -412,7 +422,9 @@ async def list_satellite_available_dates(
                     bbox=bbox,
                     time=(start_date, end_date),
                 )
-                catalog_searches.append((search, None))  # None indicates Planet collection
+                catalog_searches.append(
+                    (search, None)
+                )  # None indicates Planet collection
 
         response_items = []
         for search, satellite_info in catalog_searches:
@@ -424,7 +436,9 @@ async def list_satellite_available_dates(
                         {
                             "satellite": "S6",
                             "datetime": product["properties"]["datetime"],
-                            "collection": product["collection"],  # Add collection info for Planet
+                            "collection": product[
+                                "collection"
+                            ],  # Add collection info for Planet
                         }
                     )
                 else:
@@ -465,9 +479,9 @@ async def list_satellite_available_dates(
                     "satellite_filter": satellite,
                     "date_range": {
                         "start_date": start_date.isoformat(),
-                        "end_date": end_date.isoformat()
+                        "end_date": end_date.isoformat(),
                     },
-                    "total_dates": len(response_items)
+                    "total_dates": len(response_items),
                 },
                 "timestamp": datetime.utcnow().isoformat() + "Z",
             },
@@ -728,7 +742,10 @@ async def generate_satellite_image(
         ]:
             with rasterio.open(f"{full_path}/response.tiff") as src:
                 out_image, out_transform = mask.mask(
-                    src, [geometry_for_mask], crop=True, nodata=0  # FIXED: Use geometry_for_mask
+                    src,
+                    [geometry_for_mask],
+                    crop=True,
+                    nodata=0,  # FIXED: Use geometry_for_mask
                 )
                 out_meta = src.meta.copy()
                 out_meta.update(
@@ -744,6 +761,12 @@ async def generate_satellite_image(
                 # Process the legend data
                 legends = (
                     selected_index.legend.get("values", [])
+                    if selected_index.legend
+                    else []
+                )
+                # Process the split data
+                splits = (
+                    selected_index.legend.get("split", [])
                     if selected_index.legend
                     else []
                 )
@@ -771,6 +794,23 @@ async def generate_satellite_image(
                         legend["unit"] = "hectare" if units == "metric" else "acre"
                         legend["area"] = round(legend_pixels * pixel_area, 2)
                         legend["area%"] = 0
+
+                    # Process split data similarly
+                    for split in splits:
+                        min_split, max_split, hex_color = (
+                            split.get("min"),
+                            split.get("max"),
+                            split["hex"],
+                        )
+                        pixel_positions = (
+                            (out_image[0] >= min_split) if min_split else True
+                        ) & ((out_image[0] < max_split) if max_split else True)
+                        split_pixels = np.count_nonzero(pixel_positions)
+                        split["unit"] = "hectare" if units == "metric" else "acre"
+                        split["area"] = round(split_pixels * pixel_area, 2)
+                        split["area%"] = (
+                            f"{round((split_pixels / counted_pixels) * 100, 2)}%"
+                        )
                 else:
                     # Static legend processing based on color
                     for legend in legends:
@@ -782,6 +822,19 @@ async def generate_satellite_image(
                         legend["unit"] = "hectare" if units == "metric" else "acre"
                         legend["area"] = round(color_pixels * pixel_area, 2)
                         legend["area%"] = (
+                            f"{round((color_pixels / counted_pixels) * 100, 2)}%"
+                        )
+
+                    # Process split data for static legends
+                    for split in splits:
+                        hex_color = split["hex"]
+                        color_value = int(hex_color.lstrip("#"), 16)
+
+                        # Find pixels that match this color
+                        color_pixels = np.count_nonzero(out_image[0] == color_value)
+                        split["unit"] = "hectare" if units == "metric" else "acre"
+                        split["area"] = round(color_pixels * pixel_area, 2)
+                        split["area%"] = (
                             f"{round((color_pixels / counted_pixels) * 100, 2)}%"
                         )
 
@@ -799,6 +852,7 @@ async def generate_satellite_image(
                     "image": encoded_image_string,
                     "dynamic": dynamic_legend,
                     "legends": legends,
+                    "split": splits,
                     "unit": units,
                 }
 
@@ -812,7 +866,10 @@ async def generate_satellite_image(
                     or selected_index.legend.get("dynamic", False) == False
                 ):
                     out_image, out_transform = mask.mask(
-                        src, [geometry_for_mask], crop=True, nodata=0  # FIXED: Use geometry_for_mask
+                        src,
+                        [geometry_for_mask],
+                        crop=True,
+                        nodata=0,  # FIXED: Use geometry_for_mask
                     )
                     out_meta = src.meta.copy()
                     out_meta.update(
@@ -854,6 +911,11 @@ async def generate_satellite_image(
                             if selected_index.legend
                             else []
                         ),
+                        "split": (
+                            selected_index.legend.get("split", [])
+                            if selected_index.legend
+                            else []
+                        ),
                         "unit": units,
                     }
 
@@ -885,7 +947,9 @@ async def generate_satellite_image(
                 counted_pixels = band_value.count()
                 pixel_area = farm_area / counted_pixels
                 final_legends = []
+                final_splits = []
 
+                # Process values (legends)
                 for legend in legend_data["values"]:
                     min_legend, max_legend, hex = (
                         legend.get("min"),
@@ -921,6 +985,40 @@ async def generate_satellite_image(
                         )
                     final_legends.append(legend)
 
+                # Process split data
+                if legend_data.get("split"):
+                    for split in legend_data["split"]:
+                        min_split, max_split, hex = (
+                            split.get("min"),
+                            split.get("max"),
+                            split["hex"],
+                        )
+                        split["unit"] = "hectare" if units == "metric" else "acre"
+                        if min_split is not None and max_split is not None:
+                            pixel_positions = (band_value >= min_split) & (
+                                band_value < max_split
+                            )
+                            split_pixels = (pixel_positions).sum()
+                            split["area"] = round(split_pixels * pixel_area, 2)
+                            split["area%"] = (
+                                f"{round((split_pixels / counted_pixels) * 100, 2)}%"
+                            )
+                        elif min_split is not None:
+                            pixel_positions = band_value >= min_split
+                            split_pixels = (pixel_positions).sum()
+                            split["area"] = round(split_pixels * pixel_area, 2)
+                            split["area%"] = (
+                                f"{round((split_pixels / counted_pixels) * 100, 2)}%"
+                            )
+                        elif max_split is not None:
+                            pixel_positions = band_value < max_split
+                            split_pixels = (pixel_positions).sum()
+                            split["area"] = round(split_pixels * pixel_area, 2)
+                            split["area%"] = (
+                                f"{round((split_pixels / counted_pixels) * 100, 2)}%"
+                            )
+                        final_splits.append(split)
+
                 image_colors[np.ma.getmaskarray(band_value)] = (0, 0, 0, 0)
                 masked_img = Image.fromarray(image_colors.astype(np.uint8), mode="RGBA")
                 buffered = io.BytesIO()
@@ -931,6 +1029,7 @@ async def generate_satellite_image(
                     "image": encoded_image_string,
                     "dynamic": True,
                     "legends": final_legends,
+                    "split": final_splits,
                     "unit": units,
                 }
 
@@ -966,4 +1065,238 @@ async def generate_satellite_image(
         return JSONResponse(
             status_code=500,
             content={"detail": "Something went wrong. Check with admin"},
+        )
+
+
+@route.get("/ndvi-analysis")
+async def get_ndvi_analysis(
+    user_id: str,
+    db: Session = Depends(get_db),
+):
+    """
+    Analyze NDVI values for farms under a KVK/Super User.
+    Returns highest and lowest NDVI performing farms.
+    """
+    try:
+        # Step 1: Validate user and check role
+        user = (
+            db.query(User)
+            .options(joinedload(User.role))
+            .filter(User.id == user_id)
+            .first()
+        )
+        if not user:
+            return JSONResponse(
+                status_code=404,
+                content={
+                    "message": "User not found",
+                    "status_code": 404,
+                    "data": None,
+                    "timestamp": datetime.utcnow().isoformat() + "Z",
+                },
+            )
+
+        # Check if user has kvk or super_admin role
+        if not user.role or user.role.name not in ["kvk", "super_admin"]:
+            return JSONResponse(
+                status_code=403,
+                content={
+                    "message": "Access denied. User must have kvk or super_admin role",
+                    "status_code": 403,
+                    "data": None,
+                    "timestamp": datetime.utcnow().isoformat() + "Z",
+                },
+            )
+
+        # Step 2: Query farms for this KVK with NDVI values
+        if user.role.name == "super_admin":
+            # Super admin can see all farms
+            farms_query = (
+                db.query(Farm)
+                .options(joinedload(Farm.farmer))
+                .filter(
+                    Farm.ndvi.isnot(None),  # Only farms with NDVI values
+                    Farm.ndvi != 0,  # Exclude farms with zero NDVI
+                )
+                .all()
+            )
+        else:
+            # KVK user can only see farms assigned to them
+            farms_query = (
+                db.query(Farm)
+                .options(joinedload(Farm.farmer))
+                .filter(
+                    Farm.kvk_id == user_id,  # Use kvk_id field from Farm table
+                    Farm.ndvi.isnot(None),  # Only farms with NDVI values
+                    Farm.ndvi != 0,  # Exclude farms with zero NDVI
+                )
+                .all()
+            )
+
+        if not farms_query:
+            role_specific_message = (
+                "No farms with NDVI data found in the system"
+                if user.role.name == "super_admin"
+                else f"No farms with NDVI data found assigned to KVK: {user.name}"
+            )
+            return JSONResponse(
+                status_code=404,
+                content={
+                    "message": role_specific_message,
+                    "status_code": 404,
+                    "data": None,
+                    "timestamp": datetime.utcnow().isoformat() + "Z",
+                },
+            )
+
+        # Step 4: Extract NDVI values and calculate mean
+        ndvi_values = [farm.ndvi for farm in farms_query if farm.ndvi is not None]
+
+        if not ndvi_values:
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "message": "No valid NDVI values found",
+                    "status_code": 400,
+                    "data": None,
+                    "timestamp": datetime.utcnow().isoformat() + "Z",
+                },
+            )
+
+        mean_ndvi = statistics.mean(ndvi_values)
+
+        # Step 5: Separate farms into highest and lowest NDVI
+        highest_ndvi_farms = []
+        lowest_ndvi_farms = []
+
+        for farm in farms_query:
+            farm_data = {
+                "farm_id": str(farm.id),
+                "farm_name": farm.farm_name,
+                "farmer_name": farm.farmer.name if farm.farmer else None,
+                "farmer_id": str(farm.user_id),
+                "kvk_id": str(farm.kvk_id),
+                "ndvi_value": farm.ndvi,
+                "latitude": farm.lat,
+                "longitude": farm.lon,
+                "area": farm.area,
+                "crop": farm.crop,
+                "ai_yield": farm.ai_yield,
+                "revenue": farm.revenue,
+                "sowing_date": (
+                    farm.sowing_date.isoformat() if farm.sowing_date else None
+                ),
+                "soil_data": (
+                    {
+                        "carbon_organic_gperkg": farm.carbon_organic_gperkg,
+                        "nitrogen_gperkg": farm.nitrogen_gperkg,
+                        "ph": farm.ph,
+                        "phosphorus_ppm": farm.phosphorus_ppm,
+                        "potassium_ppm": farm.potassium_ppm,
+                    }
+                    if any(
+                        [
+                            farm.carbon_organic_gperkg,
+                            farm.nitrogen_gperkg,
+                            farm.ph,
+                            farm.phosphorus_ppm,
+                            farm.potassium_ppm,
+                        ]
+                    )
+                    else None
+                ),
+            }
+
+            if farm.ndvi >= mean_ndvi:
+                highest_ndvi_farms.append(farm_data)
+            else:
+                lowest_ndvi_farms.append(farm_data)
+
+        # Sort farms by NDVI value
+        highest_ndvi_farms.sort(key=lambda x: x["ndvi_value"], reverse=True)
+        lowest_ndvi_farms.sort(key=lambda x: x["ndvi_value"])
+
+        # Step 6: Create response data
+        analysis_data = {
+            "requesting_user_id": user_id,
+            "user_role": user.role.name if user.role else None,
+            "user_name": user.name,
+            "kvk_info": (
+                {
+                    "district": user.district,
+                    "state": user.state,
+                    "director_name": user.director_name,
+                    "established_year": user.established_year,
+                }
+                if user.role and user.role.name == "kvk"
+                else None
+            ),
+            "total_farms": len(farms_query),
+            "mean_ndvi": round(mean_ndvi, 4),
+            "ndvi_statistics": {
+                "min_ndvi": round(min(ndvi_values), 4),
+                "max_ndvi": round(max(ndvi_values), 4),
+                "mean_ndvi": round(mean_ndvi, 4),
+                "median_ndvi": round(statistics.median(ndvi_values), 4),
+                "std_dev": round(
+                    statistics.stdev(ndvi_values) if len(ndvi_values) > 1 else 0, 4
+                ),
+            },
+            "highest_ndvi_farms": {
+                "count": len(highest_ndvi_farms),
+                "farms": highest_ndvi_farms,
+            },
+            "lowest_ndvi_farms": {
+                "count": len(lowest_ndvi_farms),
+                "farms": lowest_ndvi_farms,
+            },
+        }
+
+        return JSONResponse(
+            status_code=200,
+            content={
+                "message": "NDVI analysis completed successfully",
+                "status_code": 200,
+                "data": analysis_data,
+                "timestamp": datetime.utcnow().isoformat() + "Z",
+            },
+        )
+
+    except ValueError as ve:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "message": f"Invalid data: {str(ve)}",
+                "status_code": 400,
+                "data": None,
+                "timestamp": datetime.utcnow().isoformat() + "Z",
+            },
+        )
+
+    except HTTPException as http_exc:
+        return JSONResponse(
+            status_code=http_exc.status_code,
+            content={
+                "message": str(http_exc.detail),
+                "status_code": http_exc.status_code,
+                "data": None,
+                "timestamp": datetime.utcnow().isoformat() + "Z",
+            },
+        )
+
+    except Exception as e:
+        # Log the detailed error but return a generic message
+        print(f"Error in NDVI analysis: {str(e)}")
+        import traceback
+
+        traceback.print_exc()
+
+        return JSONResponse(
+            status_code=500,
+            content={
+                "message": "Internal server error occurred during NDVI analysis",
+                "status_code": 500,
+                "data": None,
+                "timestamp": datetime.utcnow().isoformat() + "Z",
+            },
         )
