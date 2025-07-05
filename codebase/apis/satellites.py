@@ -308,19 +308,22 @@ async def list_satellite_available_dates(
     request: Request,
     user_id: str,
     farm_id: str,
-    satellite: str = None,  # NEW: Optional satellite filter parameter
+    satellite: str = None,  # Optional satellite filter parameter
     start_date: date = None,
     end_date: date = None,
+    cloud_cover: int = Query(ge=0, le=100, default=50),  # NEW: Cloud cover filter
     response: Response = None,
     db: Session = Depends(get_db),
     cache=Depends(get_redis),
 ):
     """
-    Get available satellite dates for a specific farm.
+    Get available satellite dates for a specific farm with cloud cover filtering.
 
     Args:
         satellite (str, optional): Filter by specific satellite code (e.g., "S1", "S2", "S6").
                                   If not provided, returns dates for all available satellites.
+        cloud_cover (int): Maximum allowed cloud cover percentage (0-100). Default is 50.
+                          Only applies to satellites that support cloud cover filtering.
     """
     # Date validation
     if start_date and end_date and end_date < start_date:
@@ -345,11 +348,43 @@ async def list_satellite_available_dates(
         end_date = datetime.today().date()
         start_date = end_date - timedelta(days=365)
 
-    # Update redis key to include satellite filter for proper caching
+    # Update redis key to include satellite filter and cloud cover for proper caching
     satellite_key = satellite if satellite else "all"
-    redis_key = f"catalogue_{farm_id}_{satellite_key}_{start_date.strftime('%Y-%m-%d')}_{end_date.strftime('%Y-%m-%d')}"
+    redis_key = f"catalogue_{farm_id}_{satellite_key}_{cloud_cover}_{start_date.strftime('%Y-%m-%d')}_{end_date.strftime('%Y-%m-%d')}"
 
     try:
+        # Check cache first
+        try:
+            cache_response = cache.get(redis_key)
+            if cache_response:
+                response.headers["x-cached"] = "True"
+                cache_data = json.loads(cache_response)
+                
+                message = f"Available satellite dates with cloud cover ≤ {cloud_cover}% retrieved from cache successfully."
+                if satellite:
+                    message = f"Available {satellite} satellite dates with cloud cover ≤ {cloud_cover}% retrieved from cache successfully."
+                
+                return JSONResponse(
+                    status_code=200,
+                    content={
+                        "status_code": 200,
+                        "message": message,
+                        "data": cache_data,
+                        "metadata": {
+                            "satellite_filter": satellite,
+                            "cloud_cover_filter": cloud_cover,
+                            "date_range": {
+                                "start_date": start_date.isoformat(),
+                                "end_date": end_date.isoformat(),
+                            },
+                            "total_dates": len(cache_data),
+                        },
+                        "timestamp": datetime.utcnow().isoformat() + "Z",
+                    },
+                )
+        except Exception as e:
+            print(f"Cache error: {str(e)}")
+
         farm = json.loads(get_farm_geometry(db, user_id, farm_id)["geom"])
         bbox = BBox(bbox=farm["properties"]["bbox"], crs=CRS.WGS84)
 
@@ -390,11 +425,22 @@ async def list_satellite_available_dates(
             for satellite_obj in satellites:
                 config = get_config(satellite_obj.region_url)
                 catalog = SentinelHubCatalog(config=config)
-                search = catalog.search(
-                    collection=satellite_obj.name,
-                    bbox=bbox,
-                    time=(start_date, end_date),
-                )
+                
+                # Apply cloud cover filter for satellites that support it
+                filter_condition = None
+                if satellite_obj.cloud_cover and cloud_cover >= 0:
+                    filter_condition = f"eo:cloud_cover <= {cloud_cover}"
+                
+                search_args = {
+                    "collection": satellite_obj.name,
+                    "bbox": bbox,
+                    "time": (start_date, end_date),
+                }
+                
+                if filter_condition:
+                    search_args["filter"] = filter_condition
+                
+                search = catalog.search(**search_args)
                 catalog_searches.append((search, satellite_obj))
 
         # Handle Planet collections (S6) - only if satellite is None or "S6"
@@ -422,38 +468,41 @@ async def list_satellite_available_dates(
                     bbox=bbox,
                     time=(start_date, end_date),
                 )
-                catalog_searches.append(
-                    (search, None)
-                )  # None indicates Planet collection
+                catalog_searches.append((search, None))  # None indicates Planet collection
 
+        # Execute searches and process results
         response_items = []
         for search, satellite_info in catalog_searches:
             products = list(search)
             for product in products:
                 if "byoc-" in product["collection"]:
-                    # This is a Planet collection (S6)
-                    response_items.append(
-                        {
-                            "satellite": "S6",
-                            "datetime": product["properties"]["datetime"],
-                            "collection": product[
-                                "collection"
-                            ],  # Add collection info for Planet
-                        }
-                    )
+                    # This is a Planet collection (S6) - no cloud cover filtering
+                    response_items.append({
+                        "satellite": "S6",
+                        "datetime": product["properties"]["datetime"],
+                        "collection": product["collection"],
+                        "cloud_cover": None,  # Planet data doesn't have cloud cover
+                        "is_active": True,
+                    })
                 else:
                     # This is a regular satellite
-                    response_items.append(
-                        {
-                            "satellite": satellite_info.code,
+                    satellite_name = satellite_info.code
+                    cloud_cover_value = product["properties"].get("eo:cloud_cover")
+                    
+                    # For satellites with cloud cover filtering, additional client-side filter
+                    if cloud_cover_value is None or cloud_cover_value <= cloud_cover:
+                        response_items.append({
+                            "satellite": satellite_name,
                             "datetime": product["properties"]["datetime"],
-                            "collection": product["collection"],  # Add collection info
-                        }
-                    )
+                            "collection": product["collection"],
+                            "cloud_cover": cloud_cover_value,
+                            "is_active": cloud_cover_value is None or cloud_cover_value <= 70,
+                        })
 
         # Sort by datetime for better user experience
         response_items.sort(key=lambda x: x["datetime"], reverse=True)
 
+        # Cache results
         try:
             tomorrow = datetime.now(tz=timezone.utc).replace(
                 hour=23, minute=59, second=59
@@ -465,9 +514,9 @@ async def list_satellite_available_dates(
 
         # Build response message
         if satellite:
-            message = f"Available {satellite} satellite dates retrieved successfully."
+            message = f"Available {satellite} satellite dates with cloud cover ≤ {cloud_cover}% retrieved successfully."
         else:
-            message = "Available satellite dates retrieved successfully."
+            message = f"Available satellite dates with cloud cover ≤ {cloud_cover}% retrieved successfully."
 
         return JSONResponse(
             status_code=200,
@@ -477,6 +526,7 @@ async def list_satellite_available_dates(
                 "data": response_items,
                 "metadata": {
                     "satellite_filter": satellite,
+                    "cloud_cover_filter": cloud_cover,
                     "date_range": {
                         "start_date": start_date.isoformat(),
                         "end_date": end_date.isoformat(),

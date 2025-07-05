@@ -160,7 +160,7 @@ class Satellites(Base):
     code = Column(String, nullable=False)  # e.g., "S1", "S2"
     region_url = Column(String, nullable=False)
     is_catalogue_enabled = Column(Boolean, default=True)
-
+    cloud_cover = Column(Boolean, default=False)
 
 class PlanetCollections(Base):
     __tablename__ = "planet_collections"
