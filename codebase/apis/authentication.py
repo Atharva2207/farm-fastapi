@@ -66,7 +66,7 @@ def register_user(payload: UserRegistrationSchema, db: Session = Depends(get_db)
 
     parent_id = None
     if payload.role_name == "farmer":
-        if not payload.kvk_id:
+        if not payload.parent_id:
             return JSONResponse(
                 status_code=400,
                 content={
