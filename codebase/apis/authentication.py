@@ -197,7 +197,7 @@ def login(payload: LoginSchema, db: Session = Depends(get_db)):
 
 
 @route.post("/token/refresh")
-def refresh_token(refresh_token: str, db: Session = Depends(get_db)):
+def refresh_token(refresh_token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
     try:
         payload = jwt.decode(refresh_token, SECRET_KEY, algorithms=[ALGORITHM])
         if payload.get("type") != "refresh":
