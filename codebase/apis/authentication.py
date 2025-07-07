@@ -35,10 +35,7 @@ def create_refresh_token(data: dict):
 
 @route.post("/register")
 def register_user(payload: UserRegistrationSchema, db: Session = Depends(get_db)):
-    existing_user = db.query(User).filter(
-        (User.username == payload.username) 
-        # | (payload.email and User.email == payload.email)
-    ).first()
+    existing_user = db.query(User).filter(User.username == payload.username).first()
     if existing_user:
         return JSONResponse(
             status_code=400,
@@ -54,45 +51,72 @@ def register_user(payload: UserRegistrationSchema, db: Session = Depends(get_db)
     # Validate password
     pwd_validation = validate_password(payload.password)
     if pwd_validation:
-        return pwd_validation  # already returns JSONResponse
+        return pwd_validation  # Already returns a JSONResponse
 
-    # Fetch or create role
+    # Get or create role
     role = get_role_by_name(db, payload.role_name)
     if not role:
-        role = Role(name=payload.role_name, description=f"Auto-created role")
+        role = Role(name=payload.role_name, description="Auto-created role")
         db.add(role)
         db.commit()
         db.refresh(role)
 
     parent_id = None
-    if payload.role_name == "farmer":
+
+    # Parent validation logic based on role
+    if payload.role_name == "super_admin":
+        if payload.parent_id:
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "status_code": 400,
+                    "message": "Super Admin cannot have a parent.",
+                    "error_code": "INVALID_PARENT",
+                    "data": {},
+                    "timestamp": datetime.utcnow().isoformat() + "Z",
+                },
+            )
+    else:
         if not payload.parent_id:
             return JSONResponse(
                 status_code=400,
                 content={
                     "status_code": 400,
-                    "message": "Farmer must be linked to a Paren",
+                    "message": "User must be linked to a parent.",
                     "error_code": "PARENT_REQUIRED",
                     "data": {},
                     "timestamp": datetime.utcnow().isoformat() + "Z",
                 },
             )
-        parent_user = db.query(User).filter(User.id == payload.parent_id, User.role.has(name="kvk")).first()
+
+        if payload.role_name == "farmer":
+            parent_user = db.query(User).filter(
+                User.id == payload.parent_id,
+                User.role.has(name="kvk")
+            ).first()
+        elif payload.role_name == "kvk":
+            parent_user = db.query(User).filter(
+                User.id == payload.parent_id,
+                User.role.has(name="super_admin")
+            ).first()
+        else:
+            parent_user = None
+
         if not parent_user:
             return JSONResponse(
                 status_code=404,
                 content={
                     "status_code": 404,
-                    "message": "Parent with given ID not found",
+                    "message": "Parent with given ID not found or has wrong role.",
                     "error_code": "PARENT_NOT_FOUND",
                     "data": {},
                     "timestamp": datetime.utcnow().isoformat() + "Z",
                 },
             )
-        parent_id = parent_user.id  
+        parent_id = parent_user.id
 
+    # Create user
     hashed_password = get_password_hash(payload.password)
-
     user = User(
         username=payload.username,
         email=payload.email,
@@ -112,26 +136,12 @@ def register_user(payload: UserRegistrationSchema, db: Session = Depends(get_db)
     db.commit()
     db.refresh(user)
 
-    # Response
-    response_data = {
-        "id": str(user.id),
-        "username": user.username,
-        "email": user.email,
-        "name": user.name,
-        "phone_number": user.phone_number,
-        "role": payload.role_name,
-        "is_active": user.is_active,
-        "date_joined": user.date_joined.isoformat() + "Z",
-        "parent_id": str(user.parent_id) if user.parent_id else None,
-    }
-
     return JSONResponse(
         status_code=201,
         content={
             "status_code": 201,
-            "message": "User registered successfully",
-            "error_code": None,
-            "data": response_data,
+            "message": "User registered successfully.",
+            "data": {"id": user.id, "username": user.username},
             "timestamp": datetime.utcnow().isoformat() + "Z",
         },
     )

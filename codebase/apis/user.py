@@ -212,7 +212,7 @@ def get_overview_metrics(
     total_area = db.query(func.sum(Farm.area)).filter(*filters).scalar() or 0
     avg_yield = db.query(func.avg(Farm.ai_yield)).filter(*filters).scalar() or 0
     avg_ndvi = db.query(func.avg(Farm.ndvi)).filter(*filters).scalar() or 0
-    total_crops = db.query(func.count(distinct(Farm.crop))).filter(*filters).scalar() or 0
+    total_crops = [row[0] for row in db.query(distinct(Farm.crop)).filter(*filters).all()]
 
     # --- Step 4: User Metrics ---
     kvk_role_id = db.query(Role.id).filter(Role.name == "kvk").scalar()
