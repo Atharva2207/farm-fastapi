@@ -359,11 +359,11 @@ async def list_satellite_available_dates(
             if cache_response:
                 response.headers["x-cached"] = "True"
                 cache_data = json.loads(cache_response)
-                
+
                 message = f"Available satellite dates with cloud cover ≤ {cloud_cover}% retrieved from cache successfully."
                 if satellite:
                     message = f"Available {satellite} satellite dates with cloud cover ≤ {cloud_cover}% retrieved from cache successfully."
-                
+
                 return JSONResponse(
                     status_code=200,
                     content={
@@ -425,21 +425,21 @@ async def list_satellite_available_dates(
             for satellite_obj in satellites:
                 config = get_config(satellite_obj.region_url)
                 catalog = SentinelHubCatalog(config=config)
-                
+
                 # Apply cloud cover filter for satellites that support it
                 filter_condition = None
                 if satellite_obj.cloud_cover and cloud_cover >= 0:
                     filter_condition = f"eo:cloud_cover <= {cloud_cover}"
-                
+
                 search_args = {
                     "collection": satellite_obj.name,
                     "bbox": bbox,
                     "time": (start_date, end_date),
                 }
-                
+
                 if filter_condition:
                     search_args["filter"] = filter_condition
-                
+
                 search = catalog.search(**search_args)
                 catalog_searches.append((search, satellite_obj))
 
@@ -468,7 +468,9 @@ async def list_satellite_available_dates(
                     bbox=bbox,
                     time=(start_date, end_date),
                 )
-                catalog_searches.append((search, None))  # None indicates Planet collection
+                catalog_searches.append(
+                    (search, None)
+                )  # None indicates Planet collection
 
         # Execute searches and process results
         response_items = []
@@ -477,27 +479,32 @@ async def list_satellite_available_dates(
             for product in products:
                 if "byoc-" in product["collection"]:
                     # This is a Planet collection (S6) - no cloud cover filtering
-                    response_items.append({
-                        "satellite": "S6",
-                        "datetime": product["properties"]["datetime"],
-                        "collection": product["collection"],
-                        "cloud_cover": None,  # Planet data doesn't have cloud cover
-                        "is_active": True,
-                    })
+                    response_items.append(
+                        {
+                            "satellite": "S6",
+                            "datetime": product["properties"]["datetime"],
+                            "collection": product["collection"],
+                            "cloud_cover": None,  # Planet data doesn't have cloud cover
+                            "is_active": True,
+                        }
+                    )
                 else:
                     # This is a regular satellite
                     satellite_name = satellite_info.code
                     cloud_cover_value = product["properties"].get("eo:cloud_cover")
-                    
+
                     # For satellites with cloud cover filtering, additional client-side filter
                     if cloud_cover_value is None or cloud_cover_value <= cloud_cover:
-                        response_items.append({
-                            "satellite": satellite_name,
-                            "datetime": product["properties"]["datetime"],
-                            "collection": product["collection"],
-                            "cloud_cover": cloud_cover_value,
-                            "is_active": cloud_cover_value is None or cloud_cover_value <= 70,
-                        })
+                        response_items.append(
+                            {
+                                "satellite": satellite_name,
+                                "datetime": product["properties"]["datetime"],
+                                "collection": product["collection"],
+                                "cloud_cover": cloud_cover_value,
+                                "is_active": cloud_cover_value is None
+                                or cloud_cover_value <= 70,
+                            }
+                        )
 
         # Sort by datetime for better user experience
         response_items.sort(key=lambda x: x["datetime"], reverse=True)
@@ -1459,6 +1466,124 @@ def get_ndvi_mean_values(
             content={
                 "message": f"Invalid data: {str(ve)}",
                 "status_code": 400,
+                "data": None,
+                "timestamp": datetime.utcnow().isoformat() + "Z",
+            },
+        )
+
+
+@route.get("/crop-trend-analysis")
+def get_crop_trend_analysis(
+    user_id: str,
+    crop: str,
+    db: Session = Depends(get_db),
+):
+    try:
+        # Validate main user
+        parent_user = db.query(User).filter(User.id == user_id).first()
+        if not parent_user or parent_user.role_id not in [1, 2]:
+            return JSONResponse(
+                status_code=401,
+                content={
+                    "message": "User is not authorised to perform this activity.",
+                    "status_code": 401,
+                    "data": None,
+                    "timestamp": datetime.utcnow().isoformat() + "Z",
+                },
+            )
+
+        # Step 1: Get all child users
+        child_users = db.query(User).filter(User.parent_id == user_id).all()
+        child_user_ids = [user.id for user in child_users]
+
+        if not child_user_ids:
+            return JSONResponse(
+                status_code=404,
+                content={
+                    "message": "No users found under this user.",
+                    "status_code": 404,
+                    "data": None,
+                    "timestamp": datetime.utcnow().isoformat() + "Z",
+                },
+            )
+
+        # Step 2: Get all farms associated with those users
+        farms = (
+            db.query(Farm)
+            .filter(Farm.user_id.in_(child_user_ids), Farm.crop == crop)
+            .all()
+        )
+        farm_names = [farm.farm_name for farm in farms]
+
+        if not farm_names:
+            return JSONResponse(
+                status_code=404,
+                content={
+                    "message": "No farms found for the child users.",
+                    "status_code": 404,
+                    "data": None,
+                    "timestamp": datetime.utcnow().isoformat() + "Z",
+                },
+            )
+
+        # Step 3: Fetch NDVI records for these farms
+        ndvi_records = (
+            db.query(NDVIMeanValues)
+            .filter(NDVIMeanValues.farm_name.in_(farm_names))
+            .all()
+        )
+
+        if not ndvi_records:
+            return JSONResponse(
+                status_code=404,
+                content={
+                    "message": "NDVI data not found for the farms.",
+                    "status_code": 404,
+                    "data": None,
+                    "timestamp": datetime.utcnow().isoformat() + "Z",
+                },
+            )
+
+        # Step 4: Build NDVI trends per year-month
+        years = {str(year): [None] * 12 for year in reversed(range(2021, 2026))}
+
+        for record in ndvi_records:
+            for year in years.keys():
+                for month in range(1, 13):
+                    if year == "2025" and month > 6:
+                        break
+                    month_str = f"_{year}_{month:02d}"
+                    value = getattr(record, month_str, None)
+                    if value is not None:
+                        if years[year][month - 1] is None:
+                            years[year][month - 1] = []
+                        years[year][month - 1].append(value)
+
+        # Step 5: Compute average for each month (if multiple farms)
+        for year in years:
+            for i in range(12):
+                if isinstance(years[year][i], list):
+                    values = years[year][i]
+                    years[year][i] = (
+                        round(sum(values) / len(values), 4) if values else None
+                    )
+
+        return JSONResponse(
+            status_code=200,
+            content={
+                "message": "NDVI mean values retrieved successfully.",
+                "status_code": 200,
+                "data": years,
+                "timestamp": datetime.utcnow().isoformat() + "Z",
+            },
+        )
+
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={
+                "message": f"Internal server error: {str(e)}",
+                "status_code": 500,
                 "data": None,
                 "timestamp": datetime.utcnow().isoformat() + "Z",
             },
