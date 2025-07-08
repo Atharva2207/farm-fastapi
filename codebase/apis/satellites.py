@@ -1588,3 +1588,54 @@ def get_crop_trend_analysis(
                 "timestamp": datetime.utcnow().isoformat() + "Z",
             },
         )
+
+
+S3_BUCKET = "c9s-tiff-files"
+S3_REGION = "ap-south-1"
+
+
+@route.get("/get-image-url/")
+def get_image_url(farm_id: str, user_id: str, code: str, db: Session = Depends(get_db)):
+    # Step 1: Validate farm
+    farm = db.query(Farm).filter(Farm.id == farm_id, Farm.user_id == user_id).first()
+    if not farm:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "message": "Invalid farm_id or user_id.",
+                "status_code": 400,
+                "data": None,
+                "timestamp": datetime.utcnow().isoformat() + "Z",
+            },
+        )
+
+    # Step 2: Get the actual folder name from the Indices table using the code
+    indice = db.query(Indices).filter(Indices.code == code).first()
+    if not indice:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "message": f"Invalid indice code '{code}'.",
+                "status_code": 400,
+                "data": None,
+                "timestamp": datetime.utcnow().isoformat() + "Z",
+            },
+        )
+
+    folder_name = indice.name  # Case-sensitive folder name
+    farm_name = farm.farm_name
+
+    # Step 3: Construct image URL
+    image_key = f"{folder_name}/{farm_name}.png"
+    image_url = f"https://{S3_BUCKET}.s3.{S3_REGION}.amazonaws.com/{image_key}"
+
+    return {
+        "message": "Image URL fetched successfully.",
+        "status_code": 200,
+        "data": {
+            "farm_name": farm_name,
+            "indice_name": folder_name,
+            "image_url": image_url,
+        },
+        "timestamp": datetime.utcnow().isoformat() + "Z",
+    }
