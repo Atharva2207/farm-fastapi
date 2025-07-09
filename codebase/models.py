@@ -162,6 +162,7 @@ class Satellites(Base):
     is_catalogue_enabled = Column(Boolean, default=True)
     cloud_cover = Column(Boolean, default=False)
 
+
 class PlanetCollections(Base):
     __tablename__ = "planet_collections"
 
@@ -258,3 +259,18 @@ class NDVIMeanValues(Base):
     _2025_04 = Column("2025-04", Float, nullable=True)
     _2025_05 = Column("2025-05", Float, nullable=True)
     _2025_06 = Column("2025-06", Float, nullable=True)
+
+
+class SoilParameter(Base):
+    __tablename__ = "soil_parameters"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    farm_name = Column(String(50), nullable=True)
+    aluminium_extractable_ppm = Column(Float, nullable=True)
+    bulk_density_gpercubic = Column(Integer, nullable=True)
+    calcium_extractable_ppm = Column(Float, nullable=True)
+    clay_content_per = Column(Float, nullable=True)
+    iron_extractable_ppm = Column(Float, nullable=True)
+    magnesium_extractable_ppm = Column(Float, nullable=True)
+    sulphur_extractable_ppm = Column(Float, nullable=True)
+    farm_id = Column(UUID(as_uuid=True), ForeignKey("farm.id"), nullable=True)
