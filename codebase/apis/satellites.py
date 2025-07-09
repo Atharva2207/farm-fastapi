@@ -36,6 +36,9 @@ from database import get_db
 from models import Farm, NDVIMeanValues, Satellites, PlanetCollections, Indices, User
 from database import get_db
 
+S3_BUCKET = "c9s-tiff-files"
+S3_REGION = "ap-south-1"
+
 
 route = APIRouter(prefix="/api", tags=["Satellite"])
 
@@ -1492,9 +1495,35 @@ def get_crop_trend_analysis(
                 },
             )
 
-        # Step 1: Get all child users
-        child_users = db.query(User).filter(User.parent_id == user_id).all()
-        child_user_ids = [user.id for user in child_users]
+        child_user_ids = []
+
+        # Check if user is admin (role 1)
+        if parent_user.role_id == 1:
+            # For admin users, check if any KVK has this admin as parent_id
+            kvk_users = (
+                db.query(User)
+                .filter(
+                    User.parent_id == user_id,
+                    User.role_id == 2,  # Assuming KVK users have role_id 2
+                )
+                .all()
+            )
+
+            if kvk_users:
+                # Get all child users under each KVK
+                for kvk_user in kvk_users:
+                    kvk_child_users = (
+                        db.query(User).filter(User.parent_id == kvk_user.id).all()
+                    )
+                    child_user_ids.extend([user.id for user in kvk_child_users])
+            else:
+                # If no KVK users found under admin, get direct child users
+                child_users = db.query(User).filter(User.parent_id == user_id).all()
+                child_user_ids = [user.id for user in child_users]
+        else:
+            # For non-admin users (role 2), get direct child users
+            child_users = db.query(User).filter(User.parent_id == user_id).all()
+            child_user_ids = [user.id for user in child_users]
 
         if not child_user_ids:
             return JSONResponse(
@@ -1547,6 +1576,13 @@ def get_crop_trend_analysis(
         # Step 4: Build NDVI trends per year-month
         years = {str(year): [None] * 12 for year in reversed(range(2021, 2026))}
 
+        available_months = {
+            "2021": 12,
+            "2022": 12,
+            "2023": 12,
+            "2024": 12,
+            "2025": 6,  # Only up to June for 2025
+        }
         for record in ndvi_records:
             for year in years.keys():
                 for month in range(1, 13):
@@ -1561,12 +1597,19 @@ def get_crop_trend_analysis(
 
         # Step 5: Compute average for each month (if multiple farms)
         for year in years:
+            max_month = available_months.get(year, 12)
             for i in range(12):
-                if isinstance(years[year][i], list):
-                    values = years[year][i]
-                    years[year][i] = (
-                        round(sum(values) / len(values), 4) if values else None
-                    )
+                if i < max_month:
+                    if isinstance(years[year][i], list):
+                        values = years[year][i]
+                        years[year][i] = (
+                            round(sum(values) / len(values), 4) if values else 0
+                        )
+                    elif years[year][i] is None:
+                        years[year][i] = 0
+                else:
+                    # For months beyond available data, set to 0
+                    years[year][i] = 0
 
         return JSONResponse(
             status_code=200,
@@ -1588,10 +1631,6 @@ def get_crop_trend_analysis(
                 "timestamp": datetime.utcnow().isoformat() + "Z",
             },
         )
-
-
-S3_BUCKET = "c9s-tiff-files"
-S3_REGION = "ap-south-1"
 
 
 @route.get("/get-image-url/")
