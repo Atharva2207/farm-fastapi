@@ -917,8 +917,7 @@ def get_market_metadata(
                     content={
                         "message": "Market metadata fetched from cache",
                         "status_code": 200,
-                        "data": metadata["data"],
-                        "commodities": metadata["commodities"],
+                        "data": metadata,
                         "timestamp": datetime.utcnow().isoformat(),
                         "response_time_ms": response_time,
                         "source": "cache",
@@ -966,7 +965,7 @@ def get_market_metadata(
         )
         commodities = [c[0] for c in commodities_query.all()]
 
-        metadata = {"data": states_data, "commodities": commodities}
+        metadata = {"states": states_data, "commodities": commodities}
 
         with redis_error_handling():
             redis_client = get_redis_client()
