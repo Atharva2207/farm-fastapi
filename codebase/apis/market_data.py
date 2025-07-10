@@ -890,6 +890,7 @@ def get_market_metadata(
 ):
     """
     Fetches all unique states with their nested districts and commodities.
+    Ensures today's data is present before processing.
     """
     start_time = time.time()
 
@@ -898,17 +899,19 @@ def get_market_metadata(
     if error_response:
         return error_response
 
-    cache_key = f"{user_id}:market_metadata"
+    today_date = datetime.now().date()
+    delete_date = today_date - timedelta(days=2)
+
+    metadata_cache_key = f"{user_id}:market_metadata"
 
     try:
         with redis_error_handling():
             redis_client = get_redis_client()
-            cached_metadata = redis_client.get(cache_key)
-
+            # First check if metadata is already cached
+            cached_metadata = redis_client.get(metadata_cache_key)
             if cached_metadata:
                 metadata = json.loads(cached_metadata)
                 response_time = (time.time() - start_time) * 1000
-
                 return JSONResponse(
                     status_code=200,
                     content={
@@ -922,10 +925,27 @@ def get_market_metadata(
                     },
                 )
 
+            # Now check if raw data is cached — same as /market_data_by_region
+            raw_data_cache_key = f"{user_id}:{today_date}:all_data"
+            raw_data_meta_key = f"{user_id}:{today_date}:all_data_meta"
+            cached_data = redis_client.get(raw_data_cache_key)
+            meta_data = redis_client.get(raw_data_meta_key)
+
+            if not cached_data or not meta_data:
+                # Data not available — fetch from API
+                data_source = ensure_fresh_data(db, today_date, delete_date)
+                if isinstance(data_source, JSONResponse):
+                    return data_source  # early return if error from API
+
+        # Build fresh metadata from DB
         states_data = {}
         state_districts_query = (
             db.query(Market.state, Market.district)
-            .filter(Market.state != "", Market.district != "")
+            .filter(
+                Market.arrival_date == today_date,
+                Market.state != "",
+                Market.district != "",
+            )
             .distinct()
             .order_by(Market.state, Market.district)
         )
@@ -940,7 +960,7 @@ def get_market_metadata(
 
         commodities_query = (
             db.query(Market.commodity)
-            .filter(Market.commodity != "")
+            .filter(Market.arrival_date == today_date, Market.commodity != "")
             .distinct()
             .order_by(Market.commodity)
         )
@@ -950,8 +970,7 @@ def get_market_metadata(
 
         with redis_error_handling():
             redis_client = get_redis_client()
-            redis_client.delete(cache_key)
-            redis_client.setex(cache_key, 24 * 60 * 60, json.dumps(metadata))
+            redis_client.setex(metadata_cache_key, 24 * 60 * 60, json.dumps(metadata))
 
         response_time = (time.time() - start_time) * 1000
         return JSONResponse(
@@ -980,4 +999,3 @@ def get_market_metadata(
                 "error": str(e),
             },
         )
-
