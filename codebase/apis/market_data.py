@@ -908,22 +908,22 @@ def get_market_metadata(
         with redis_error_handling():
             redis_client = get_redis_client()
             # First check if metadata is already cached
-            # cached_metadata = redis_client.get(metadata_cache_key)
-            # if cached_metadata:
-            #     metadata = json.loads(cached_metadata)
-            #     response_time = (time.time() - start_time) * 1000
-            #     return JSONResponse(
-            #         status_code=200,
-            #         content={
-            #             "message": "Market metadata fetched from cache",
-            #             "status_code": 200,
-            #             "data": metadata["data"],
-            #             "commodities": metadata["commodities"],
-            #             "timestamp": datetime.utcnow().isoformat(),
-            #             "response_time_ms": response_time,
-            #             "source": "cache",
-            #         },
-            #     )
+            cached_metadata = redis_client.get(metadata_cache_key)
+            if cached_metadata:
+                metadata = json.loads(cached_metadata)
+                response_time = (time.time() - start_time) * 1000
+                return JSONResponse(
+                    status_code=200,
+                    content={
+                        "message": "Market metadata fetched from cache",
+                        "status_code": 200,
+                        "data": metadata["data"],
+                        "commodities": metadata["commodities"],
+                        "timestamp": datetime.utcnow().isoformat(),
+                        "response_time_ms": response_time,
+                        "source": "cache",
+                    },
+                )
 
             # Now check if raw data is cached — same as /market_data_by_region
             raw_data_cache_key = f"{user_id}:{today_date}:all_data"
