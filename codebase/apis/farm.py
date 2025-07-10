@@ -10,6 +10,7 @@ from models import Farm, SoilParameter, User, NdviStage
 from schemas import FarmPlotCreateSchema, FarmPlotUpdateSchema, FarmPlotFlexibleSchema
 from geoalchemy2.shape import to_shape
 from fastapi_pagination import Page, paginate
+from sqlalchemy import select
 
 from helper_functions.utility import (
     build_response,
@@ -150,11 +151,21 @@ def delete_farmplot(id: UUID, db: Session = Depends(get_db)):
 @route.get("/soil-classification-summary/")
 def get_soil_classification_summary(parent_id: str, db: Session = Depends(get_db)):
     try:
-       
+
+        # Step 1: Get child users (level 1 - KVKs)
+        kvk_users_subq = select(User.id).filter(User.parent_id == parent_id).subquery()
+
+        # Step 2: Get child users of KVKs (level 2 - Farmers)
+        farmer_users_subq = (
+            select(User.id)
+            .filter(User.parent_id.in_(select(kvk_users_subq.c.id)))
+            .subquery()
+        )
+
+        # Step 3: Get farms of farmers
         farms = (
             db.query(Farm)
-            .join(User, Farm.user_id == User.id)
-            .filter(User.parent_id == parent_id)
+            .filter(Farm.user_id.in_(select(farmer_users_subq.c.id)))
             .all()
         )
 
@@ -352,7 +363,6 @@ def get_crop_lifecycle_data(user_id: str, farm_id: str, db: Session = Depends(ge
                 "timestamp": datetime.utcnow().isoformat() + "Z",
             },
         )
-
 
     record = db.query(NdviStage).filter(NdviStage.farm_name == farm.farm_name).first()
     if not record:
