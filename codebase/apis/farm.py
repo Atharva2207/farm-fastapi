@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, Query, HTTPException
 from fastapi.responses import JSONResponse
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 from typing import Optional, List
 from uuid import UUID
@@ -146,146 +147,148 @@ def delete_farmplot(id: UUID, db: Session = Depends(get_db)):
     return build_response({"message": "Farm deleted successfully"})
 
 
-@route.get("/get-soil-parameters/")
-def get_soil_parameters(
-    user_id: str, farm_id: Optional[str] = Query(None), db: Session = Depends(get_db)
-):
+@route.get("/soil-classification-summary/")
+def get_soil_classification_summary(parent_id: str, db: Session = Depends(get_db)):
     try:
-        # Step 1: Validate user
-        user = db.query(User).filter(User.id == user_id).first()
-        farm_ids = []
+        # Step 1: Get all farms for users under the parent user_id
+        farms = (
+            db.query(Farm)
+            .join(User, Farm.user_id == User.id)
+            .filter(User.parent_id == parent_id)
+            .all()
+        )
+        print(farms)
 
-        if farm_id:
-            # Validate the farm belongs to this user's hierarchy
-            farm = db.query(Farm).filter(Farm.id == farm_id).first()
-            if not farm:
-                return JSONResponse(
-                    status_code=404,
-                    content={
-                        "message": "Farm not found.",
-                        "status_code": 404,
-                        "data": None,
-                        "timestamp": datetime.utcnow().isoformat() + "Z",
-                    },
-                )
-
-            # Admin check: allow only if farm.user_id is under their hierarchy
-            if user.role_id == 1:
-                valid_ids = []
-                kvks = (
-                    db.query(User)
-                    .filter(User.parent_id == user_id, User.role_id == 2)
-                    .all()
-                )
-                for kvk in kvks:
-                    child_users = db.query(User).filter(User.parent_id == kvk.id).all()
-                    valid_ids.extend([u.id for u in child_users])
-                if farm.user_id not in valid_ids:
-                    return JSONResponse(
-                        status_code=403,
-                        content={
-                            "message": "You are not authorized to access this farm.",
-                            "status_code": 403,
-                            "data": None,
-                            "timestamp": datetime.utcnow().isoformat() + "Z",
-                        },
-                    )
-            elif user.role_id == 2 and farm.user_id not in [
-                u.id for u in db.query(User).filter(User.parent_id == user_id).all()
-            ]:
-                return JSONResponse(
-                    status_code=403,
-                    content={
-                        "message": "You are not authorized to access this farm.",
-                        "status_code": 403,
-                        "data": None,
-                        "timestamp": datetime.utcnow().isoformat() + "Z",
-                    },
-                )
-
-            farm_ids = [farm_id]
-
-        else:
-            # No farm_id provided, fetch all farms under hierarchy
-            child_user_ids = []
-
-            if user.role_id == 1:
-                kvk_users = (
-                    db.query(User)
-                    .filter(User.parent_id == user_id, User.role_id == 2)
-                    .all()
-                )
-                for kvk_user in kvk_users:
-                    farmers = db.query(User).filter(User.parent_id == kvk_user.id).all()
-                    child_user_ids.extend([u.id for u in farmers])
-            elif user.role_id == 2:
-                child_user_ids = [
-                    u.id for u in db.query(User).filter(User.parent_id == user_id).all()
-                ]
-
-            if not child_user_ids:
-                return JSONResponse(
-                    status_code=404,
-                    content={
-                        "message": "No child users found.",
-                        "status_code": 404,
-                        "data": None,
-                        "timestamp": datetime.utcnow().isoformat() + "Z",
-                    },
-                )
-
-            farms = db.query(Farm).filter(Farm.user_id.in_(child_user_ids)).all()
-            farm_ids = [f.id for f in farms]
-
-        if not farm_ids:
+        if not farms:
             return JSONResponse(
                 status_code=404,
                 content={
-                    "message": "No farms found for this user.",
+                    "message": "No farms found",
                     "status_code": 404,
                     "data": None,
                     "timestamp": datetime.utcnow().isoformat() + "Z",
                 },
             )
 
-        # Step 2: Fetch soil data
-        soil_data = (
+        farm_ids = [f.id for f in farms]
+        total_farms = len(farms)
+
+        # Step 2: Get soil parameters
+        soil_params = (
             db.query(SoilParameter).filter(SoilParameter.farm_id.in_(farm_ids)).all()
         )
 
-        if not soil_data:
-            return JSONResponse(
-                status_code=404,
-                content={
-                    "message": "No soil data found for the specified farms.",
-                    "status_code": 404,
-                    "data": None,
-                    "timestamp": datetime.utcnow().isoformat() + "Z",
-                },
-            )
+        # Step 3: Initialize results
+        result = {
+            "Nitrogen (g/kg)": {"Low": 0, "Medium": 0, "High": 0},
+            "Phosphorus (ppm)": {"Low": 0, "Medium": 0, "High": 0},
+            "Potassium (ppm)": {"Low": 0, "Medium": 0, "High": 0},
+            "Organic Carbon (g/kg)": {"Low": 0, "Medium": 0, "High": 0},
+            "pH": {
+                "Strongly Acidic": 0,
+                "Moderately Acidic": 0,
+                "Neutral": 0,
+                "Moderately Alkaline": 0,
+                "Strongly Alkaline": 0,
+            },
+            "Iron": {"Deficient": 0, "Sufficient": 0},
+            "Sulpher": {"Deficient": 0, "Sufficient": 0},
+            "Aluminium": {"Deficient": 0, "Sufficient": 0},
+            "Calcium": {"Deficient": 0, "Sufficient": 0},
+            "magnesium": {"Deficient": 0, "Sufficient": 0},
+        }
 
-        # Step 3: Format response
-        data = [
-            {
-                "farm_name": s.farm_name,
-                "aluminium_extractable_ppm": s.aluminium_extractable_ppm,
-                "bulk_density_gpercubic": s.bulk_density_gpercubic,
-                "calcium_extractable_ppm": s.calcium_extractable_ppm,
-                "clay_content_per": s.clay_content_per,
-                "iron_extractable_ppm": s.iron_extractable_ppm,
-                "magnesium_extractable_ppm": s.magnesium_extractable_ppm,
-                "sulphur_extractable_ppm": s.sulphur_extractable_ppm,
-                "farm_id": str(s.farm_id),
-            }
-            for s in soil_data
-        ]
+        # Step 4: Process Farm-based parameters
+        for f in farms:
+            if f.nitrogen_gperkg is not None:
+                if f.nitrogen_gperkg < 30:
+                    result["Nitrogen (g/kg)"]["Low"] += 1
+                elif 30 <= f.nitrogen_gperkg <= 40:
+                    result["Nitrogen (g/kg)"]["Medium"] += 1
+                else:
+                    result["Nitrogen (g/kg)"]["High"] += 1
+
+            if f.phosphorus_ppm is not None:
+                if f.phosphorus_ppm < 10:
+                    result["Phosphorus (ppm)"]["Low"] += 1
+                elif 10 <= f.phosphorus_ppm <= 15:
+                    result["Phosphorus (ppm)"]["Medium"] += 1
+                else:
+                    result["Phosphorus (ppm)"]["High"] += 1
+
+            if f.potassium_ppm is not None:
+                if f.potassium_ppm < 110:
+                    result["Potassium (ppm)"]["Low"] += 1
+                elif 110 <= f.potassium_ppm <= 280:
+                    result["Potassium (ppm)"]["Medium"] += 1
+                else:
+                    result["Potassium (ppm)"]["High"] += 1
+
+            if f.carbon_organic_gperkg is not None:
+                if f.carbon_organic_gperkg < 35:
+                    result["Organic Carbon (g/kg)"]["Low"] += 1
+                elif 35 <= f.carbon_organic_gperkg <= 40:
+                    result["Organic Carbon (g/kg)"]["Medium"] += 1
+                else:
+                    result["Organic Carbon (g/kg)"]["High"] += 1
+
+            if f.ph is not None:
+                if f.ph < 5.5:
+                    result["pH"]["Strongly Acidic"] += 1
+                elif 5.5 <= f.ph < 6.7:
+                    result["pH"]["Moderately Acidic"] += 1
+                elif 6.7 <= f.ph <= 7.3:
+                    result["pH"]["Neutral"] += 1
+                elif 7.3 < f.ph <= 8.5:
+                    result["pH"]["Moderately Alkaline"] += 1
+                else:
+                    result["pH"]["Strongly Alkaline"] += 1
+
+        # Step 5: Process SoilParameter-based values
+        for s in soil_params:
+            if s.iron_extractable_ppm is not None:
+                if s.iron_extractable_ppm < 20:
+                    result["Iron"]["Deficient"] += 1
+                else:
+                    result["Iron"]["Sufficient"] += 1
+
+            if s.sulphur_extractable_ppm is not None:
+                if s.sulphur_extractable_ppm < 25:
+                    result["Sulpher"]["Deficient"] += 1
+                else:
+                    result["Sulpher"]["Sufficient"] += 1
+
+            if s.aluminium_extractable_ppm is not None:
+                if s.aluminium_extractable_ppm < 35:
+                    result["Aluminium"]["Deficient"] += 1
+                else:
+                    result["Aluminium"]["Sufficient"] += 1
+
+            if s.calcium_extractable_ppm is not None:
+                if s.calcium_extractable_ppm < 67:
+                    result["Calcium"]["Deficient"] += 1
+                else:
+                    result["Calcium"]["Sufficient"] += 1
+
+            if s.magnesium_extractable_ppm is not None:
+                if s.magnesium_extractable_ppm < 50:
+                    result["magnesium"]["Deficient"] += 1
+                else:
+                    result["magnesium"]["Sufficient"] += 1
+
+        # Step 6: Add percentages
+        for param in result:
+            for cat in result[param]:
+                count = result[param][cat]
+                percent = (count / total_farms) * 100 if total_farms else 0
+                result[param][cat] = {"count": count, "percentage": round(percent, 2)}
 
         return JSONResponse(
             status_code=200,
             content={
-                "message": "Soil parameters fetched successfully.",
+                "message": "Soil classification summary generated successfully.",
                 "status_code": 200,
-                "data": data,
+                "data": result,
                 "timestamp": datetime.utcnow().isoformat() + "Z",
             },
         )
