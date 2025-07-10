@@ -353,16 +353,6 @@ def get_crop_lifecycle_data(user_id: str, farm_id: str, db: Session = Depends(ge
             },
         )
 
-    if farm.user_id != user_id:
-        return JSONResponse(
-            status_code=403,
-            content={
-                "message": "You do not have permission to access this farm",
-                "status_code": 403,
-                "data": None,
-                "timestamp": datetime.utcnow().isoformat() + "Z",
-            },
-        )
 
     record = db.query(NdviStage).filter(NdviStage.farm_name == farm.farm_name).first()
     if not record:
