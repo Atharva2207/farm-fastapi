@@ -6,7 +6,7 @@ from typing import Optional, List
 from uuid import UUID
 from datetime import date, datetime
 from database import get_db
-from models import Farm, SoilParameter, User
+from models import Farm, SoilParameter, User, NdviStage
 from schemas import FarmPlotCreateSchema, FarmPlotUpdateSchema, FarmPlotFlexibleSchema
 from geoalchemy2.shape import to_shape
 from fastapi_pagination import Page, paginate
@@ -150,14 +150,13 @@ def delete_farmplot(id: UUID, db: Session = Depends(get_db)):
 @route.get("/soil-classification-summary/")
 def get_soil_classification_summary(parent_id: str, db: Session = Depends(get_db)):
     try:
-        # Step 1: Get all farms for users under the parent user_id
+       
         farms = (
             db.query(Farm)
             .join(User, Farm.user_id == User.id)
             .filter(User.parent_id == parent_id)
             .all()
         )
-        print(farms)
 
         if not farms:
             return JSONResponse(
@@ -303,3 +302,104 @@ def get_soil_classification_summary(parent_id: str, db: Session = Depends(get_db
                 "timestamp": datetime.utcnow().isoformat() + "Z",
             },
         )
+
+
+DATE_COLUMNS = [
+    "1/3/2025",
+    "1/28/2025",
+    "2/2/2025",
+    "2/7/2025",
+    "2/12/2025",
+    "2/17/2025",
+    "2/22/2025",
+    "3/4/2025",
+    "3/9/2025",
+    "3/14/2025",
+    "3/19/2025",
+    "3/24/2025",
+    "3/29/2025",
+    "3/31/2025",
+    "4/3/2025",
+    "4/8/2025",
+    "4/13/2025",
+    "4/18/2025",
+    "4/20/2025",
+    "4/23/2025",
+    "4/28/2025",
+    "5/8/2025",
+    "5/10/2025",
+    "5/13/2025",
+    "5/18/2025",
+    "5/23/2025",
+    "5/30/2025",
+    "6/2/2025",
+    "6/7/2025",
+    "6/12/2025",
+]
+
+
+@route.get("/crop-cycle-data")
+def get_crop_lifecycle_data(user_id: str, farm_id: str, db: Session = Depends(get_db)):
+
+    farm = db.query(Farm).filter(Farm.id == farm_id).first()
+    if not farm:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "message": "Farm ID is required",
+                "status_code": 400,
+                "data": None,
+                "timestamp": datetime.utcnow().isoformat() + "Z",
+            },
+        )
+
+    if farm.user_id != user_id:
+        return JSONResponse(
+            status_code=403,
+            content={
+                "message": "You do not have permission to access this farm",
+                "status_code": 403,
+                "data": None,
+                "timestamp": datetime.utcnow().isoformat() + "Z",
+            },
+        )
+
+    record = db.query(NdviStage).filter(NdviStage.farm_name == farm.farm_name).first()
+    if not record:
+        return JSONResponse(
+            status_code=404,
+            content={
+                "message": f"No data found for farm: {farm.farm_name}",
+                "status_code": 404,
+                "data": None,
+                "timestamp": datetime.utcnow().isoformat() + "Z",
+            },
+        )
+
+    crop_lifecycle_data = []
+
+    for date_str in DATE_COLUMNS:
+        try:
+            dt = datetime.strptime(date_str, "%m/%d/%Y")
+            iso_date = dt.strftime("%Y-%m-%d")
+            attr_prefix = f"_{iso_date.replace('-', '_')}"
+        except ValueError:
+            continue
+
+        ndvi_val = getattr(record, f"{attr_prefix}_ndvi", None)
+        stage_val = getattr(record, f"{attr_prefix}_stage", None)
+
+        if ndvi_val is not None or stage_val is not None:
+            crop_lifecycle_data.append(
+                {"date": iso_date, "data": ndvi_val, "crop_stage": stage_val}
+            )
+
+    return JSONResponse(
+        status_code=200,
+        content={
+            "message": "NDVI values fetched successfully",
+            "status_code": 200,
+            "data": crop_lifecycle_data,
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+        },
+    )
