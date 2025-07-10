@@ -152,22 +152,24 @@ def delete_farmplot(id: UUID, db: Session = Depends(get_db)):
 def get_soil_classification_summary(parent_id: str, db: Session = Depends(get_db)):
     try:
 
-        # Step 1: Get child users (level 1 - KVKs)
-        kvk_users_subq = select(User.id).filter(User.parent_id == parent_id).subquery()
+        # Get direct children of parent_id (could be KVKs or farmers)
+        children_lvl1 = db.query(User.id).filter(User.parent_id == parent_id).all()
+        lvl1_ids = [row.id for row in children_lvl1]
 
-        # Step 2: Get child users of KVKs (level 2 - Farmers)
-        farmer_users_subq = (
-            select(User.id)
-            .filter(User.parent_id.in_(select(kvk_users_subq.c.id)))
-            .subquery()
-        )
+        # Get their children (only if they exist, i.e., it's a super_admin)
+        if lvl1_ids:
+            children_lvl2 = db.query(User.id).filter(User.parent_id.in_(lvl1_ids)).all()
+            lvl2_ids = [row.id for row in children_lvl2]
+        else:
+            lvl2_ids = []
 
-        # Step 3: Get farms of farmers
-        farms = (
-            db.query(Farm)
-            .filter(Farm.user_id.in_(select(farmer_users_subq.c.id)))
-            .all()
-        )
+        # Final list of user_ids to fetch farms for
+        # If there are level 2 children, use them (means super_admin)
+        # Else, fallback to level 1 children (means KVK)
+        target_user_ids = lvl2_ids if lvl2_ids else lvl1_ids
+
+        # Fetch farms
+        farms = db.query(Farm).filter(Farm.user_id.in_(target_user_ids)).all()
 
         if not farms:
             return JSONResponse(
