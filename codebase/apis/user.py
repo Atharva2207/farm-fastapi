@@ -210,7 +210,7 @@ def get_overview_metrics(
         filters.append(Farm.id == farm_id)
 
     # --- Step 3: Farm Metrics ---
-    farm_query = db.query(Farm).filter(*filters)
+    farm_query = db.query(Farm).filter(Farm.deleted == False).filter(*filters)
     total_farms = farm_query.count()
     total_area = db.query(func.sum(Farm.area)).filter(*filters).scalar() or 0
     avg_yield = db.query(func.avg(Farm.ai_yield)).filter(*filters).scalar() or 0
