@@ -20,9 +20,16 @@ from helper_functions.utility import (
 route = APIRouter(prefix="/api", tags=["Farm"])
 
 
-def serialize_farm(farm: Farm, include: Optional[List[str]] = None) -> dict:
+def serialize_farm(
+    farm: Farm, include: Optional[List[str]] = None, db: Session = None
+) -> dict:
     def safe_date(val):
         return val.isoformat() if isinstance(val, (date, datetime)) else val
+
+    # 🟢 Fetch soil parameters manually
+    soil = None
+    if db:
+        soil = db.query(SoilParameter).filter(SoilParameter.farm_id == farm.id).first()
 
     data = {
         "id": str(farm.id),
@@ -36,13 +43,17 @@ def serialize_farm(farm: Farm, include: Optional[List[str]] = None) -> dict:
         "cab": farm.cab,
         "carbon_organic_gperkg": farm.carbon_organic_gperkg,
         "nitrogen_gperkg": farm.nitrogen_gperkg,
+        "aluminium_extractable_ppm": soil.aluminium_extractable_ppm,
+        "bulk_density_gpercubic": soil.bulk_density_gpercubic,
+        "calcium_extractable_ppm": soil.calcium_extractable_ppm,
+        "clay_content_per": soil.clay_content_per,
+        "iron_extractable_ppm": soil.iron_extractable_ppm,
+        "magnesium_extractable_ppm": soil.magnesium_extractable_ppm,
+        "sulphur_extractable_ppm": soil.sulphur_extractable_ppm,
         "ph": farm.ph,
         "phosphorus_ppm": farm.phosphorus_ppm,
         "potassium_ppm": farm.potassium_ppm,
         "farm_name": farm.farm_name,
-        # "lat": farm.lat,
-        # "lon": farm.lon,
-        # "bbox": farm.bbox,
         "sowing_date": safe_date(farm.sowing_date),
         "created_at": (
             farm.farmer.date_joined.isoformat() + "Z"
@@ -51,6 +62,7 @@ def serialize_farm(farm: Farm, include: Optional[List[str]] = None) -> dict:
         ),
     }
 
+    # Optional includes
     if include:
         if "geometry" in include and farm.geometry:
             data["geometry"] = to_shape(farm.geometry).wkt
@@ -90,7 +102,7 @@ def list_farmplots(
 
     include_fields = include.split(",") if include else []
     farms = query.all()
-    serialized = [serialize_farm(f, include_fields) for f in farms]
+    serialized = [serialize_farm(f, include_fields, db) for f in farms]
     paginated = paginate(serialized)
     return build_response(paginated.dict())
 
@@ -100,7 +112,7 @@ def read_farmplot(id: UUID, db: Session = Depends(get_db)):
     farm = db.query(Farm).filter(Farm.id == id).first()
     if not farm:
         raise HTTPException(status_code=404, detail="Farm not found")
-    return build_response(serialize_farm(farm, ["geometry", "farmer", "kvk"]))
+    return build_response(serialize_farm(farm, ["geometry", "farmer", "kvk"], db))
 
 
 @route.post("/farmplots/", response_model=FarmPlotFlexibleSchema)
@@ -124,7 +136,7 @@ def create_farmplot(payload: FarmPlotCreateSchema, db: Session = Depends(get_db)
     db.commit()
     db.refresh(new_farm)
 
-    return build_response(serialize_farm(new_farm, ["geometry", "farmer", "kvk"]))
+    return build_response(serialize_farm(new_farm, ["geometry", "farmer", "kvk"], db))
 
 
 @route.put("/farmplots/{id}/", response_model=FarmPlotFlexibleSchema)
@@ -138,7 +150,7 @@ def update_farmplot(
         setattr(farm, key, value)
     db.commit()
     db.refresh(farm)
-    return build_response(serialize_farm(farm, ["geometry", "farmer", "kvk"]))
+    return build_response(serialize_farm(farm, ["geometry", "farmer", "kvk"], db))
 
 
 @route.delete("/farmplots/{id}/")

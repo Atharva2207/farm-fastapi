@@ -65,12 +65,12 @@ class UserRegistrationSchema(BaseModel):
     director_name: Optional[str] = None
     established_year: Optional[str] = None
 
-    @validator('phone_number')
+    @validator("phone_number")
     def validate_phone(cls, v):
         if v and not v.isdigit():
-            raise ValueError('Phone number must contain only digits')
+            raise ValueError("Phone number must contain only digits")
         if v and len(v) < 8:
-            raise ValueError('Phone number must be at least 8 digits')
+            raise ValueError("Phone number must be at least 8 digits")
         return v
 
 
@@ -170,6 +170,13 @@ class FarmPlotFlexibleSchema(BaseModel):
     kvk: Optional[UserMini] = None
     carbon_organic_gperkg: Optional[float] = None
     nitrogen_gperkg: Optional[float] = None
+    aluminium_extractable_ppm: Optional[float]
+    bulk_density_gpercubic: Optional[int]
+    calcium_extractable_ppm: Optional[float]
+    clay_content_per: Optional[float]
+    iron_extractable_ppm: Optional[float]
+    magnesium_extractable_ppm: Optional[float]
+    sulphur_extractable_ppm: Optional[float]
     ph: Optional[float] = None
     phosphorus_ppm: Optional[float] = None
     potassium_ppm: Optional[float] = None
@@ -183,6 +190,7 @@ class FarmPlotFlexibleSchema(BaseModel):
 
     class Config:
         from_attributes = True
+
 
 class UserFlexibleSchema(BaseModel):
     id: UUID
