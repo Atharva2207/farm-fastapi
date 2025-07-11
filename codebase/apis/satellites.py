@@ -1634,7 +1634,13 @@ def get_crop_trend_analysis(
 
 
 @route.get("/get-image-url/")
-def get_image_url(farm_id: str, user_id: str, code: str, db: Session = Depends(get_db)):
+def get_image_url(
+    farm_id: str,
+    user_id: str,
+    code: str,
+    resolution: str,
+    db: Session = Depends(get_db),
+):
     # Step 1: Validate farm
     farm = db.query(Farm).filter(Farm.id == farm_id, Farm.user_id == user_id).first()
     if not farm:
@@ -1661,11 +1667,17 @@ def get_image_url(farm_id: str, user_id: str, code: str, db: Session = Depends(g
             },
         )
 
-    folder_name = indice.name  # Case-sensitive folder name
+    special_case_folders = {
+        "TRUECOLOR": "Truecolor",
+        # Add more exceptions here if needed
+    }
+
+    # Apply override if exists, else default to upper
+    folder_name = special_case_folders.get(indice.name.upper(), indice.name.upper())
     farm_name = farm.farm_name
 
     # Step 3: Construct image URL
-    image_key = f"{folder_name}/{farm_name}.png"
+    image_key = f"{resolution}/{folder_name}/{farm_name}.png"
     image_url = f"https://{S3_BUCKET}.s3.{S3_REGION}.amazonaws.com/{image_key}"
 
     return {
