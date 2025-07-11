@@ -117,7 +117,7 @@ class UserMini(BaseModel):
 
 class FarmPlotCreateSchema(BaseModel):
     user_id: UUID
-    parent_id: Optional[UUID] = None
+    kvk_id: Optional[UUID] = None
     sowing_date: Optional[date] = None
     geometry: Optional[str] = None
     center: Optional[str] = None
