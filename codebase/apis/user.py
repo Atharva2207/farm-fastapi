@@ -150,13 +150,13 @@ def read_user(id: UUID, db: Session = Depends(get_db)):
     return build_response(serialize_user(user, ["role", "parent"]))
 
 
-@route.post("/", response_model=UserFlexibleSchema)
-def create_user(payload: UserCreateSchema, db: Session = Depends(get_db)):
-    new_user = User(**payload.dict())
-    db.add(new_user)
-    db.commit()
-    db.refresh(new_user)
-    return build_response(serialize_user(new_user, ["role", "parent"]))
+# @route.post("/", response_model=UserFlexibleSchema)
+# def create_user(payload: UserCreateSchema, db: Session = Depends(get_db)):
+#     new_user = User(**payload.dict())
+#     db.add(new_user)
+#     db.commit()
+#     db.refresh(new_user)
+#     return build_response(serialize_user(new_user, ["role", "parent"]))
 
 
 @route.put("/{id}/", response_model=UserFlexibleSchema)
