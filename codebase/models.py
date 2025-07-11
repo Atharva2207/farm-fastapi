@@ -136,7 +136,6 @@ class Farm(Base):
     crop = Column(String(100), nullable=True)
     ai_yield = Column(Float, nullable=True)
     revenue = Column(Float, nullable=True)
-    ndvi = Column(Float, nullable=True)
     farm_name = Column(String(255), nullable=True)
     lat = Column(Float, Computed("(ST_Y(ST_Centroid(geometry)))", True))
     lon = Column(Float, Computed("(ST_X(ST_Centroid(geometry)))", True))
@@ -151,6 +150,10 @@ class Farm(Base):
     phosphorus_ppm = Column(Float, nullable=True)
     potassium_ppm = Column(Float, nullable=True)
     sowing_date = Column(Date, nullable=True)
+    ndvi = Column(Float, nullable=True)
+    cab = Column(Float, nullable=True)
+    evi = Column(Float, nullable=True)
+    ndmi = Column(Float, nullable=True)
 
 
 class Satellites(Base):

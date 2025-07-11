@@ -161,6 +161,9 @@ class FarmPlotFlexibleSchema(BaseModel):
     ai_yield: Optional[float] = None
     revenue: Optional[float] = None
     ndvi: Optional[float] = None
+    evi: Optional[float] = None
+    ndmi: Optional[float] = None
+    cab: Optional[float] = None
     geometry: Optional[str] = None
     created_at: Optional[str] = None
     farmer: Optional[UserMini] = None
