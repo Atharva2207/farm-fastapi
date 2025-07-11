@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query, HTTPException
+from fastapi import APIRouter, Depends, Query, HTTPException, Body
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from typing import Optional, List
@@ -95,8 +95,7 @@ def serialize_user(user: User, include: Optional[List[str]] = None, db: Session 
 
     return data
 
-
-@route.get("/", response_model=List[UserFlexibleSchema])
+@route.post("/", response_model=List[UserFlexibleSchema])
 def list_users(
     db: Session = Depends(get_db),
     id: Optional[UUID] = Query(None),
@@ -108,8 +107,11 @@ def list_users(
     district: Optional[str] = Query(None),
     crop: Optional[str] = Query(None),
     include: Optional[str] = Query(None),
-    params: Params = Depends()
+    params: Params = Depends(),
+    body: dict = Body(default={})
 ):
+    ids = body.get("ids")
+
     query = db.query(User).filter(User.is_deleted == False)
 
     if id:
@@ -126,10 +128,11 @@ def list_users(
         query = query.filter(User.state.ilike(f"%{state}%"))
     if district:
         query = query.filter(User.district.ilike(f"%{district}%"))
+    if ids:
+        query = query.filter(User.id.in_(ids))
 
     include_fields = include.split(",") if include else []
 
-    # Collect farm-related filters to apply during serialization
     farm_filters = {
         "crop": crop,
     }

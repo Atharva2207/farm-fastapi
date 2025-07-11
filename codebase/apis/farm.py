@@ -162,7 +162,6 @@ def delete_farmplot(id: UUID, db: Session = Depends(get_db)):
     db.commit()
     return build_response({"message": "Farm deleted successfully"})
 
-
 @route.get("/soil-classification-summary/")
 def get_soil_classification_summary(parent_id: str, db: Session = Depends(get_db)):
     try:
@@ -200,115 +199,135 @@ def get_soil_classification_summary(parent_id: str, db: Session = Depends(get_db
         farm_ids = [f.id for f in farms]
         total_farms = len(farms)
 
-        # Step 2: Get soil parameters
-        soil_params = (
-            db.query(SoilParameter).filter(SoilParameter.farm_id.in_(farm_ids)).all()
-        )
+        # Step 4: Get soil parameters
+        soil_params = db.query(SoilParameter).filter(SoilParameter.farm_id.in_(farm_ids)).all()
+        farm_lookup = {str(f.id): str(f.user_id) for f in farms}
 
-        # Step 3: Initialize results
+        # Step 5: Base result structure
+        def param_bucket():
+            return {
+                "Low": {"count": 0, "percentage": 0, "entries": []},
+                "Medium": {"count": 0, "percentage": 0, "entries": []},
+                "High": {"count": 0, "percentage": 0, "entries": []},
+            }
+
+        def suff_def_bucket():
+            return {
+                "Deficient": {"count": 0, "percentage": 0, "entries": []},
+                "Sufficient": {"count": 0, "percentage": 0, "entries": []},
+            }
+
+        def ph_bucket():
+            return {
+                "Strongly Acidic": {"count": 0, "percentage": 0, "entries": []},
+                "Moderately Acidic": {"count": 0, "percentage": 0, "entries": []},
+                "Neutral": {"count": 0, "percentage": 0, "entries": []},
+                "Moderately Alkaline": {"count": 0, "percentage": 0, "entries": []},
+                "Strongly Alkaline": {"count": 0, "percentage": 0, "entries": []},
+            }
+
         result = {
-            "Nitrogen (g/kg)": {"Low": 0, "Medium": 0, "High": 0},
-            "Phosphorus (ppm)": {"Low": 0, "Medium": 0, "High": 0},
-            "Potassium (ppm)": {"Low": 0, "Medium": 0, "High": 0},
-            "Organic Carbon (g/kg)": {"Low": 0, "Medium": 0, "High": 0},
-            "pH": {
-                "Strongly Acidic": 0,
-                "Moderately Acidic": 0,
-                "Neutral": 0,
-                "Moderately Alkaline": 0,
-                "Strongly Alkaline": 0,
-            },
-            "Iron": {"Deficient": 0, "Sufficient": 0},
-            "Sulpher": {"Deficient": 0, "Sufficient": 0},
-            "Aluminium": {"Deficient": 0, "Sufficient": 0},
-            "Calcium": {"Deficient": 0, "Sufficient": 0},
-            "magnesium": {"Deficient": 0, "Sufficient": 0},
+            "Nitrogen (g/kg)": param_bucket(),
+            "Phosphorus (ppm)": param_bucket(),
+            "Potassium (ppm)": param_bucket(),
+            "Organic Carbon (g/kg)": param_bucket(),
+            "pH": ph_bucket(),
+            "Iron": suff_def_bucket(),
+            "Sulpher": suff_def_bucket(),
+            "Aluminium": suff_def_bucket(),
+            "Calcium": suff_def_bucket(),
+            "magnesium": suff_def_bucket(),
         }
 
-        # Step 4: Process Farm-based parameters
+        # Step 6: Process farm-level parameters
         for f in farms:
+            farm_id = str(f.id)
+            farmer_id = str(f.user_id)
+
+            def add_entry(param, category):
+                result[param][category]["count"] += 1
+                result[param][category]["entries"].append({"farm_id": farm_id, "farmer_id": farmer_id})
+
             if f.nitrogen_gperkg is not None:
                 if f.nitrogen_gperkg < 30:
-                    result["Nitrogen (g/kg)"]["Low"] += 1
+                    add_entry("Nitrogen (g/kg)", "Low")
                 elif 30 <= f.nitrogen_gperkg <= 40:
-                    result["Nitrogen (g/kg)"]["Medium"] += 1
+                    add_entry("Nitrogen (g/kg)", "Medium")
                 else:
-                    result["Nitrogen (g/kg)"]["High"] += 1
+                    add_entry("Nitrogen (g/kg)", "High")
 
             if f.phosphorus_ppm is not None:
                 if f.phosphorus_ppm < 10:
-                    result["Phosphorus (ppm)"]["Low"] += 1
+                    add_entry("Phosphorus (ppm)", "Low")
                 elif 10 <= f.phosphorus_ppm <= 15:
-                    result["Phosphorus (ppm)"]["Medium"] += 1
+                    add_entry("Phosphorus (ppm)", "Medium")
                 else:
-                    result["Phosphorus (ppm)"]["High"] += 1
+                    add_entry("Phosphorus (ppm)", "High")
 
             if f.potassium_ppm is not None:
                 if f.potassium_ppm < 110:
-                    result["Potassium (ppm)"]["Low"] += 1
+                    add_entry("Potassium (ppm)", "Low")
                 elif 110 <= f.potassium_ppm <= 280:
-                    result["Potassium (ppm)"]["Medium"] += 1
+                    add_entry("Potassium (ppm)", "Medium")
                 else:
-                    result["Potassium (ppm)"]["High"] += 1
+                    add_entry("Potassium (ppm)", "High")
 
             if f.carbon_organic_gperkg is not None:
                 if f.carbon_organic_gperkg < 35:
-                    result["Organic Carbon (g/kg)"]["Low"] += 1
+                    add_entry("Organic Carbon (g/kg)", "Low")
                 elif 35 <= f.carbon_organic_gperkg <= 40:
-                    result["Organic Carbon (g/kg)"]["Medium"] += 1
+                    add_entry("Organic Carbon (g/kg)", "Medium")
                 else:
-                    result["Organic Carbon (g/kg)"]["High"] += 1
+                    add_entry("Organic Carbon (g/kg)", "High")
 
             if f.ph is not None:
                 if f.ph < 5.5:
-                    result["pH"]["Strongly Acidic"] += 1
+                    add_entry("pH", "Strongly Acidic")
                 elif 5.5 <= f.ph < 6.7:
-                    result["pH"]["Moderately Acidic"] += 1
+                    add_entry("pH", "Moderately Acidic")
                 elif 6.7 <= f.ph <= 7.3:
-                    result["pH"]["Neutral"] += 1
+                    add_entry("pH", "Neutral")
                 elif 7.3 < f.ph <= 8.5:
-                    result["pH"]["Moderately Alkaline"] += 1
+                    add_entry("pH", "Moderately Alkaline")
                 else:
-                    result["pH"]["Strongly Alkaline"] += 1
+                    add_entry("pH", "Strongly Alkaline")
 
-        # Step 5: Process SoilParameter-based values
+        # Step 7: Process SoilParameter values
         for s in soil_params:
+            farm_id = str(s.farm_id)
+            farmer_id = farm_lookup.get(farm_id)
+            if not farmer_id:
+                continue
+
+            def add_soil_entry(param, level):
+                result[param][level]["count"] += 1
+                result[param][level]["entries"].append({"farm_id": farm_id, "farmer_id": farmer_id})
+
             if s.iron_extractable_ppm is not None:
-                if s.iron_extractable_ppm < 20:
-                    result["Iron"]["Deficient"] += 1
-                else:
-                    result["Iron"]["Sufficient"] += 1
+                level = "Deficient" if s.iron_extractable_ppm < 20 else "Sufficient"
+                add_soil_entry("Iron", level)
 
             if s.sulphur_extractable_ppm is not None:
-                if s.sulphur_extractable_ppm < 25:
-                    result["Sulpher"]["Deficient"] += 1
-                else:
-                    result["Sulpher"]["Sufficient"] += 1
+                level = "Deficient" if s.sulphur_extractable_ppm < 25 else "Sufficient"
+                add_soil_entry("Sulpher", level)
 
             if s.aluminium_extractable_ppm is not None:
-                if s.aluminium_extractable_ppm < 35:
-                    result["Aluminium"]["Deficient"] += 1
-                else:
-                    result["Aluminium"]["Sufficient"] += 1
+                level = "Deficient" if s.aluminium_extractable_ppm < 35 else "Sufficient"
+                add_soil_entry("Aluminium", level)
 
             if s.calcium_extractable_ppm is not None:
-                if s.calcium_extractable_ppm < 67:
-                    result["Calcium"]["Deficient"] += 1
-                else:
-                    result["Calcium"]["Sufficient"] += 1
+                level = "Deficient" if s.calcium_extractable_ppm < 67 else "Sufficient"
+                add_soil_entry("Calcium", level)
 
             if s.magnesium_extractable_ppm is not None:
-                if s.magnesium_extractable_ppm < 50:
-                    result["magnesium"]["Deficient"] += 1
-                else:
-                    result["magnesium"]["Sufficient"] += 1
+                level = "Deficient" if s.magnesium_extractable_ppm < 50 else "Sufficient"
+                add_soil_entry("magnesium", level)
 
-        # Step 6: Add percentages
+        # Step 8: Calculate percentages
         for param in result:
             for cat in result[param]:
-                count = result[param][cat]
-                percent = (count / total_farms) * 100 if total_farms else 0
-                result[param][cat] = {"count": count, "percentage": round(percent, 2)}
+                count = result[param][cat]["count"]
+                result[param][cat]["percentage"] = round((count / total_farms) * 100, 2) if total_farms else 0
 
         return JSONResponse(
             status_code=200,
