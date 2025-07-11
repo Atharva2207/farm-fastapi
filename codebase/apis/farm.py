@@ -85,7 +85,7 @@ def serialize_farm(
 
 
 
-@route.get("/farmplots/", response_model=Page[FarmPlotFlexibleSchema])
+@route.post("/farmplots/filter", response_model=Page[FarmPlotFlexibleSchema])
 def list_farmplots(
     db: Session = Depends(get_db),
     farmer_id: Optional[UUID] = Query(None),
