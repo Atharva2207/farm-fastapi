@@ -212,10 +212,10 @@ def get_overview_metrics(
     # --- Step 3: Farm Metrics ---
     farm_query = db.query(Farm).filter(Farm.deleted == False).filter(*filters)
     total_farms = farm_query.count()
-    total_area = db.query(func.sum(Farm.area)).filter(*filters).scalar() or 0
-    avg_yield = db.query(func.avg(Farm.ai_yield)).filter(*filters).scalar() or 0
-    avg_ndvi = db.query(func.avg(Farm.ndvi)).filter(*filters).scalar() or 0
-    crops = ", ".join([row[0] for row in db.query(distinct(Farm.crop)).filter(*filters).all()])
+    total_area = db.query(func.sum(Farm.area)).filter(Farm.deleted == False).filter(*filters).scalar() or 0
+    avg_yield = db.query(func.avg(Farm.ai_yield)).filter(Farm.deleted == False).filter(*filters).scalar() or 0
+    avg_ndvi = db.query(func.avg(Farm.ndvi)).filter(Farm.deleted == False).filter(*filters).scalar() or 0
+    crops = ", ".join([row[0] for row in db.query(distinct(Farm.crop)).filter(Farm.deleted == False).filter(*filters).all()])
 
     # --- Step 4: User Metrics ---
     kvk_role_id = db.query(Role.id).filter(Role.name == "kvk").scalar()
