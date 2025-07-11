@@ -187,7 +187,7 @@ def get_soil_classification_summary(parent_id: str, db: Session = Depends(get_db
         target_user_ids = lvl2_ids if lvl2_ids else lvl1_ids
 
         # Fetch farms
-        farms = db.query(Farm).filter(Farm.user_id.in_(target_user_ids) and Farm.deleted == False).all()
+        farms = db.query(Farm).filter(Farm.user_id.in_(target_user_ids), Farm.deleted == False).all()
 
         if not farms:
             return JSONResponse(
