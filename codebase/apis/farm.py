@@ -94,7 +94,7 @@ def list_farmplots(
     include: Optional[str] = Query(None),
     body: FarmFilterBody = Body(default=None),
 ):
-    query = db.query(Farm)
+    query = db.query(Farm).filter(Farm.deleted == False)
     if farmer_id:
         query = query.filter(Farm.user_id == farmer_id)
     if kvk_id:
@@ -113,7 +113,7 @@ def list_farmplots(
 
 @route.get("/farmplots/{id}/", response_model=FarmPlotFlexibleSchema)
 def read_farmplot(id: UUID, db: Session = Depends(get_db)):
-    farm = db.query(Farm).filter(Farm.id == id).first()
+    farm = db.query(Farm).filter(Farm.id == id and Farm.deleted == False).first()
     if not farm:
         raise HTTPException(status_code=404, detail="Farm not found")
     return build_response(serialize_farm(farm, ["geometry", "farmer", "kvk"], db))
@@ -147,7 +147,7 @@ def create_farmplot(payload: FarmPlotCreateSchema, db: Session = Depends(get_db)
 def update_farmplot(
     id: UUID, payload: FarmPlotUpdateSchema, db: Session = Depends(get_db)
 ):
-    farm = db.query(Farm).filter(Farm.id == id).first()
+    farm = db.query(Farm).filter(Farm.id == id and Farm.deleted == False).first()
     if not farm:
         raise HTTPException(status_code=404, detail="Farm not found")
     for key, value in payload.dict(exclude_unset=True).items():
@@ -159,7 +159,7 @@ def update_farmplot(
 
 @route.delete("/farmplots/{id}/")
 def delete_farmplot(id: UUID, db: Session = Depends(get_db)):
-    farm = db.query(Farm).filter(Farm.id == id).first()
+    farm = db.query(Farm and Farm.deleted == False).filter(Farm.id == id).first()
     if not farm:
         raise HTTPException(status_code=404, detail="Farm not found")
     db.delete(farm)
@@ -187,7 +187,7 @@ def get_soil_classification_summary(parent_id: str, db: Session = Depends(get_db
         target_user_ids = lvl2_ids if lvl2_ids else lvl1_ids
 
         # Fetch farms
-        farms = db.query(Farm).filter(Farm.user_id.in_(target_user_ids)).all()
+        farms = db.query(Farm).filter(Farm.user_id.in_(target_user_ids) and Farm.deleted == False).all()
 
         if not farms:
             return JSONResponse(
@@ -392,7 +392,7 @@ DATE_COLUMNS = [
 @route.get("/crop-cycle-data")
 def get_crop_lifecycle_data(user_id: str, farm_id: str, db: Session = Depends(get_db)):
 
-    farm = db.query(Farm).filter(Farm.id == farm_id).first()
+    farm = db.query(Farm).filter(Farm.id == farm_id and Farm.deleted == False).first()
     if not farm:
         return JSONResponse(
             status_code=400,

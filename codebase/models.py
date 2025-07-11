@@ -124,6 +124,8 @@ class Farm(Base):
     )  # Farmer
     kvk_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)  # KVK
 
+    deleted = Column(Boolean, default=False, nullable=False) 
+
     # Spatial columns
     geometry = Column(Geometry("POLYGON"))
     area = Column(
