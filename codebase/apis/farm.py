@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query, HTTPException
+from fastapi import APIRouter, Depends, Query, HTTPException, Body
 from fastapi.responses import JSONResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -7,7 +7,7 @@ from uuid import UUID
 from datetime import date, datetime
 from database import get_db
 from models import Farm, SoilParameter, User, NdviStage
-from schemas import FarmPlotCreateSchema, FarmPlotUpdateSchema, FarmPlotFlexibleSchema
+from schemas import FarmPlotCreateSchema, FarmPlotUpdateSchema, FarmPlotFlexibleSchema, FarmFilterBody
 from geoalchemy2.shape import to_shape
 from fastapi_pagination import Page, paginate
 from sqlalchemy import select
@@ -84,6 +84,7 @@ def serialize_farm(
     return data
 
 
+
 @route.get("/farmplots/", response_model=Page[FarmPlotFlexibleSchema])
 def list_farmplots(
     db: Session = Depends(get_db),
@@ -91,6 +92,7 @@ def list_farmplots(
     kvk_id: Optional[UUID] = Query(None),
     crop: Optional[str] = Query(None),
     include: Optional[str] = Query(None),
+    body: FarmFilterBody = Body(default=None),
 ):
     query = db.query(Farm)
     if farmer_id:
@@ -99,6 +101,8 @@ def list_farmplots(
         query = query.filter(Farm.kvk_id == kvk_id)
     if crop:
         query = query.filter(Farm.crop.ilike(f"%{crop}%"))
+    if body and body.ids:
+        query = query.filter(Farm.id.in_(body.ids))
 
     include_fields = include.split(",") if include else []
     farms = query.all()

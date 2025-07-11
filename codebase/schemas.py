@@ -254,3 +254,7 @@ class UserUpdateSchema(BaseModel):
     pincode: Optional[str] = None
     director_name: Optional[str] = None
     established_year: Optional[str] = None
+
+
+class FarmFilterBody(BaseModel):
+    ids: Optional[List[UUID]] = None
