@@ -1481,7 +1481,6 @@ def get_ndvi_mean_values(
 def get_crop_trend_analysis(
     user_id: str,
     crop: str,
-    farm_id: str,
     db: Session = Depends(get_db),
 ):
     try:
