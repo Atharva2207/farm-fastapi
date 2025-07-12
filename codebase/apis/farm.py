@@ -125,7 +125,7 @@ def create_farmplot(payload: FarmPlotCreateSchema, db: Session = Depends(get_db)
 
     # If kvk_id is not provided, try to infer from farmer's parent_id
     if not data.get("kvk_id"):
-        farmer = db.query(User).filter(User.id == data["user_id"]).first()
+        farmer = db.query(User).filter(User.id == data["user_id"], User.is_deleted == False).first()
         if not farmer:
             raise HTTPException(status_code=404, detail="Farmer not found")
         if not farmer.parent_id:
@@ -171,12 +171,12 @@ def get_soil_classification_summary(parent_id: str, db: Session = Depends(get_db
     try:
 
         # Get direct children of parent_id (could be KVKs or farmers)
-        children_lvl1 = db.query(User.id).filter(User.parent_id == parent_id).all()
+        children_lvl1 = db.query(User.id).filter(User.parent_id == parent_id, User.is_deleted == False).all()
         lvl1_ids = [row.id for row in children_lvl1]
 
         # Get their children (only if they exist, i.e., it's a super_admin)
         if lvl1_ids:
-            children_lvl2 = db.query(User.id).filter(User.parent_id.in_(lvl1_ids)).all()
+            children_lvl2 = db.query(User.id).filter(User.parent_id.in_(lvl1_ids), User.is_deleted == False).all()
             lvl2_ids = [row.id for row in children_lvl2]
         else:
             lvl2_ids = []

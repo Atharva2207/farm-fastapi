@@ -132,7 +132,7 @@ def get_user_by_id(db: Session, user_id: str):
             }
         )
 
-    user = db.query(User).filter(User.id == user_uuid).first()
+    user = db.query(User).filter(User.id == user_uuid, User.is_deleted == False).first()
     if not user:
         return None, JSONResponse(
             status_code=404,

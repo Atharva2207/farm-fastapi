@@ -175,7 +175,7 @@ def get_user_by_id(db: Session, user_id: str):
             },
         )
 
-    user = db.query(User).filter(User.id == user_uuid).first()
+    user = db.query(User).filter(User.id == user_uuid, User.is_deleted == False).first()
     if not user:
         return None, JSONResponse(
             status_code=404,
@@ -1142,7 +1142,7 @@ async def get_ndvi_analysis(
         user = (
             db.query(User)
             .options(joinedload(User.role))
-            .filter(User.id == user_id)
+            .filter(User.id == user_id, User.is_deleted == False)
             .first()
         )
         if not user:
@@ -1174,7 +1174,7 @@ async def get_ndvi_analysis(
             # First get KVKs that have this super_admin as parent
             kvk_users = (
                 db.query(User)
-                .filter(User.parent_id == user_id, User.role.has(name="kvk"))
+                .filter(User.parent_id == user_id, User.role.has(name="kvk"), User.is_deleted == False)
                 .all()
             )
 
@@ -1481,11 +1481,12 @@ def get_ndvi_mean_values(
 def get_crop_trend_analysis(
     user_id: str,
     crop: str,
+    farm_id: str,
     db: Session = Depends(get_db),
 ):
     try:
         # Validate main user
-        parent_user = db.query(User).filter(User.id == user_id).first()
+        parent_user = db.query(User).filter(User.id == user_id, User.is_deleted == False).first()
         if not parent_user or parent_user.role_id not in [1, 2]:
             return JSONResponse(
                 status_code=401,
@@ -1507,6 +1508,7 @@ def get_crop_trend_analysis(
                 .filter(
                     User.parent_id == user_id,
                     User.role_id == 2,  # Assuming KVK users have role_id 2
+                    User.is_deleted == False
                 )
                 .all()
             )
@@ -1524,7 +1526,7 @@ def get_crop_trend_analysis(
                 child_user_ids = [user.id for user in child_users]
         else:
             # For non-admin users (role 2), get direct child users
-            child_users = db.query(User).filter(User.parent_id == user_id).all()
+            child_users = db.query(User).filter(User.parent_id == user_id, User.is_deleted == False).all()
             child_user_ids = [user.id for user in child_users]
 
         if not child_user_ids:

@@ -144,7 +144,7 @@ def list_users(
 
 @route.get("/{id}/", response_model=UserFlexibleSchema)
 def read_user(id: UUID, db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.id == id).first()
+    user = db.query(User).filter(User.id == id, User.is_deleted == False).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     return build_response(serialize_user(user, ["role", "parent"]))
@@ -161,7 +161,7 @@ def read_user(id: UUID, db: Session = Depends(get_db)):
 
 @route.put("/{id}/", response_model=UserFlexibleSchema)
 def update_user(id: UUID, payload: UserUpdateSchema, db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.id == id).first()
+    user = db.query(User).filter(User.id == id, User.is_deleted == False).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     for key, value in payload.dict(exclude_unset=True).items():
@@ -192,7 +192,7 @@ def get_overview_metrics(
     # --- Step 1: Smart fallback for kvk_id (treated as parent_id) ---
     if not kvk_id:
         if farmer_id:
-            farmer = db.query(User).filter(User.id == farmer_id).first()
+            farmer = db.query(User).filter(User.id == farmer_id, User.is_deleted == False).first()
             if farmer:
                 kvk_id = farmer.parent_id
         elif farm_id:
@@ -226,16 +226,16 @@ def get_overview_metrics(
         parent_ids = {f.kvk_id for f in filtered_farms}
         farmer_ids = {f.user_id for f in filtered_farms}
 
-        total_kvks = db.query(User).filter(User.id.in_(parent_ids), User.role_id == kvk_role_id).count()
-        total_farmers = db.query(User).filter(User.id.in_(farmer_ids), User.role_id == farmer_role_id).count()
+        total_kvks = db.query(User).filter(User.id.in_(parent_ids), User.role_id == kvk_role_id, User.is_deleted == False).count()
+        total_farmers = db.query(User).filter(User.id.in_(farmer_ids), User.role_id == farmer_role_id, User.is_deleted == False).count()
     else:
-        total_kvks = db.query(User).filter(User.role_id == kvk_role_id).count()
-        total_farmers = db.query(User).filter(User.role_id == farmer_role_id).count()
+        total_kvks = db.query(User).filter(User.role_id == kvk_role_id, User.is_deleted == False).count()
+        total_farmers = db.query(User).filter(User.role_id == farmer_role_id, User.is_deleted == False).count()
 
     # --- Step 5: Current Parent Info ---
     current_parent = None
     if kvk_id:
-        parent_user = db.query(User).filter(User.id == kvk_id).first()
+        parent_user = db.query(User).filter(User.id == kvk_id, User.is_deleted == False).first()
         if parent_user:
             current_parent = {
                 "id": str(parent_user.id),
