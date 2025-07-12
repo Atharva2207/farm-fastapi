@@ -68,7 +68,7 @@ def serialize_user(user: User, include: Optional[List[str]] = None, db: Session 
             farm_query = db.query(
                 func.coalesce(func.sum(Farm.area), 0),
                 func.count(Farm.id)
-            )
+            ).filter(Farm.deleted == False)
 
             role_name = user.role.name.lower() if user.role else ""
 
@@ -196,7 +196,7 @@ def get_overview_metrics(
             if farmer:
                 kvk_id = farmer.parent_id
         elif farm_id:
-            farm = db.query(Farm).filter(Farm.id == farm_id).first()
+            farm = db.query(Farm).filter(Farm.id == farm_id, Farm.deleted == False).first()
             if farm:
                 kvk_id = farm.kvk_id  # still mapped from kvk_id field
 

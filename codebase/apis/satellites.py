@@ -87,7 +87,7 @@ def get_farm_by_id(db: Session, farm_id: str):
 
     # You'll need to replace this with your actual Farm model query
     try:
-        farm = db.query(Farm).filter(Farm.id == farm_uuid).first()
+        farm = db.query(Farm).filter(Farm.id == farm_uuid, Farm.deleted == False).first()
     except Exception as e:
         return None, JSONResponse(
             status_code=500,
@@ -221,7 +221,7 @@ def get_farm_geometry(db: Session, user_id: str, farm_id: str):
                 "area_sqm"
             ),  # Area in square meters
         )
-        .filter(Farm.user_id == user.id, Farm.id == farm_id)
+        .filter(Farm.user_id == user.id, Farm.id == farm_id, Farm.deleted == False)
         .first()
     )
 
@@ -279,7 +279,7 @@ def get_farm(db: Session, user_id: str, farm_id: str):
             Farm.bbox.label("bbox"),
             func.ST_Area(func.ST_Transform(Farm.geometry, 3857)).label("area_sqm"),
         )
-        .filter(Farm.user_id == user.id, Farm.id == farm_id)
+        .filter(Farm.user_id == user.id, Farm.id == farm_id, Farm.deleted == False)
         .first()
     )
 
@@ -1201,7 +1201,8 @@ async def get_ndvi_analysis(
                         kvk_ids
                     ),  # Farms belonging to KVKs under this super_admin
                     Farm.ndvi.isnot(None),  # Only farms with NDVI values
-                    Farm.ndvi != 0,  # Exclude farms with zero NDVI
+                    Farm.ndvi != 0,  # Exclude farms with zero NDVI,
+                    Farm.deleted == False
                 )
                 .all()
             )
@@ -1213,7 +1214,8 @@ async def get_ndvi_analysis(
                 .filter(
                     Farm.kvk_id == user_id,  # Use kvk_id field from Farm table
                     Farm.ndvi.isnot(None),  # Only farms with NDVI values
-                    Farm.ndvi != 0,  # Exclude farms with zero NDVI
+                    Farm.ndvi != 0,  # Exclude farms with zero NDVI,
+                    Farm.deleted == False
                 )
                 .all()
             )
@@ -1402,7 +1404,7 @@ def get_ndvi_mean_values(
     try:
         # Validate farm and user
         farm = (
-            db.query(Farm).filter(Farm.id == farm_id, Farm.user_id == user_id).first()
+            db.query(Farm).filter(Farm.id == farm_id,Farm.deleted == False, Farm.user_id == user_id).first()
         )
         if not farm:
             return JSONResponse(
@@ -1539,7 +1541,7 @@ def get_crop_trend_analysis(
         # Step 2: Get all farms associated with those users
         farms = (
             db.query(Farm)
-            .filter(Farm.user_id.in_(child_user_ids), Farm.crop == crop)
+            .filter(Farm.user_id.in_(child_user_ids), Farm.crop == crop, Farm.deleted == False)
             .all()
         )
         farm_names = [farm.farm_name for farm in farms]
@@ -1642,7 +1644,7 @@ def get_image_url(
     db: Session = Depends(get_db),
 ):
     # Step 1: Validate farm
-    farm = db.query(Farm).filter(Farm.id == farm_id, Farm.user_id == user_id).first()
+    farm = db.query(Farm).filter(Farm.id == farm_id, Farm.user_id == user_id, Farm.deleted == False).first()
     if not farm:
         return JSONResponse(
             status_code=400,

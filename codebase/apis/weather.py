@@ -46,7 +46,7 @@ def get_farm_by_id(db: Session, farm_id: str):
     
     # You'll need to replace this with your actual Farm model query
     try:
-        farm = db.query(Farm).filter(Farm.id == farm_uuid).first()
+        farm = db.query(Farm).filter(Farm.id == farm_uuid, Farm.deleted == False).first()
     except Exception as e:
         return None, JSONResponse(
             status_code=500,
